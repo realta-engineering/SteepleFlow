@@ -205,8 +205,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .assignment { display: flex; align-items: center; gap: 7px; padding: 7px; border: 1px solid var(--line); border-radius: 5px; background: white; box-shadow: 0 1px 2px rgba(0,0,0,.03); cursor: grab; }
 .assignment .avatar { width: 24px; height: 24px; font-size: 9px; }
 .assignment strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
-.lock { margin-left: auto; color: var(--amber); }
-.lock .lucide { width: 12px; }
+.assignment-actions { margin-left: auto; display: flex; gap: 1px; }
+.assignment-control { width: 22px; height: 22px; flex: 0 0 22px; display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--muted); }
+.assignment-control:hover { background: var(--surface-alt); }
+.assignment-control .lucide { width: 12px; }
+.lock { color: var(--amber); }
+.remove-assignment:hover { color: var(--danger); background: var(--danger-soft); }
 .participant-pool { max-height: 330px; display: grid; gap: 7px; padding: 10px; overflow-y: auto; }
 .participant-pool-empty { margin: 4px; color: var(--muted); font-size: 11px; text-align: center; }
 .roster-participant { display: grid; grid-template-columns: 30px minmax(0,1fr) 14px; gap: 8px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: white; cursor: grab; }

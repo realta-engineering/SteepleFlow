@@ -330,7 +330,7 @@ function renderRoster() {
 }
 
 function rosterDate(date, roles, assignments) {
-  return `<div class="roster-date"><div class="date-cell"><strong>${dateLabel(date,{weekday:"short",day:"numeric"})}</strong><small>${dateLabel(date,{month:"long",year:"numeric"})}</small></div>${roles.map(role => { const a=assignments.find(x=>x.date===date&&x.role===role); const p=a&&store.state.participants.find(x=>x.id===a.participantId); return `<div class="assignment-cell dropzone" data-date="${date}" data-role="${esc(role)}"><div class="assignment-label"><span>${esc(role)}</span><span>${p ? "1 / 1" : "0 / 1"}</span></div>${p ? `<div class="assignment" data-id="${a.id}"><span class="avatar">${initials(p.name)}</span><strong>${esc(p.name)}</strong><button class="btn btn-ghost btn-sm lock" data-lock="${a.id}" title="${a.locked ? "Unlock placement" : "Lock placement"}">${icon(a.locked ? "lock-keyhole" : "lock-keyhole-open")}</button></div>` : ""}</div>`; }).join("")}</div>`;
+  return `<div class="roster-date"><div class="date-cell"><strong>${dateLabel(date,{weekday:"short",day:"numeric"})}</strong><small>${dateLabel(date,{month:"long",year:"numeric"})}</small></div>${roles.map(role => { const a=assignments.find(x=>x.date===date&&x.role===role); const p=a&&store.state.participants.find(x=>x.id===a.participantId); return `<div class="assignment-cell dropzone" data-date="${date}" data-role="${esc(role)}"><div class="assignment-label"><span>${esc(role)}</span><span>${p ? "1 / 1" : "0 / 1"}</span></div>${p ? `<div class="assignment" data-id="${a.id}"><span class="avatar">${initials(p.name)}</span><strong>${esc(p.name)}</strong><span class="assignment-actions"><button class="assignment-control lock" data-lock="${a.id}" title="${a.locked ? "Unlock placement" : "Lock placement"}">${icon(a.locked ? "lock-keyhole" : "lock-keyhole-open")}</button><button class="assignment-control remove-assignment" data-remove-assignment="${a.id}" title="Remove assignment">${icon("trash-2")}</button></span></div>` : ""}</div>`; }).join("")}</div>`;
 }
 
 function rosterParticipant(person, cycle) {
@@ -366,6 +366,7 @@ function bindRoster() {
   document.querySelector("[data-save]").addEventListener("click", async () => { await api.call("saveAssignments", { cycleId: currentCycle().id, assignments: store.state.assignments.filter(a => !a.cycleId || a.cycleId === currentCycle().id) }); toast("Draft roster saved", "save"); });
   document.querySelector("[data-publish]").addEventListener("click", publishRoster);
   document.querySelectorAll("[data-lock]").forEach(btn => btn.addEventListener("click", e => { e.stopPropagation(); const a=store.state.assignments.find(x=>x.id===btn.dataset.lock); a.locked=!a.locked; store.save(); renderRoster(); toast(a.locked ? "Placement locked" : "Placement unlocked", a.locked ? "lock" : "lock-open"); }));
+  document.querySelectorAll("[data-remove-assignment]").forEach(btn => btn.addEventListener("click", e => { e.stopPropagation(); const a=store.state.assignments.find(x=>x.id===btn.dataset.removeAssignment);if(!a)return;if(a.locked){toast("Unlock this placement before removing it","circle-alert");return}store.state.assignments=store.state.assignments.filter(x=>x.id!==a.id);store.save();renderRoster();toast("Assignment removed","user-minus") }));
   if (!window.Sortable) return;
   const pool = document.querySelector("[data-participant-pool]");
   if (pool) new Sortable(pool, { group: { name: "roster", pull: "clone", put: false }, sort: false, draggable: ".roster-participant", animation: 140, revertOnSpill: true });
@@ -543,7 +544,6 @@ async function copyLink(path){const url=`${location.href.split("#")[0]}#${path}`
 
 window.addEventListener("hashchange",route);
 window.addEventListener("DOMContentLoaded",route);
-
 
 
 
