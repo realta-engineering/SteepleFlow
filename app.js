@@ -463,11 +463,15 @@ function showDeleteCycleModal(cycle) {
 
 function showCycleModal() {
   showModal(`<div class="modal-head"><div><h2>Create roster cycle</h2></div><button class="icon-btn" data-close title="Close">${icon("x")}</button></div><form id="cycle-form"><div class="modal-body"><div class="field"><label>Cycle name</label><input name="name" required></div><div class="field-grid" style="margin-top:14px"><div class="field"><label>Start date</label><input type="date" name="start" required></div><div class="field"><label>End date</label><input type="date" name="end" required></div></div><div class="field" style="margin-top:14px"><label>Repeats weekly on</label><select name="weekday"><option value="0" selected>Sunday</option><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option></select></div><div class="form-section"><h3>Required roles</h3><div class="role-builder" id="role-builder">${roleInput("")}</div><button class="btn btn-ghost btn-sm" type="button" data-add-role>${icon("plus")} Add role</button></div></div><div class="modal-foot"><button class="btn btn-secondary" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">${icon("arrow-right")} Create and collect</button></div></form>`);
-  document.querySelector("[data-add-role]").addEventListener("click",()=>{document.querySelector("#role-builder").insertAdjacentHTML("beforeend",roleInput(""));bindRoleRemove();refreshIcons()}); bindRoleRemove();
+  const builder=document.querySelector("#role-builder");
+  const addRoleInput=(afterRow=null)=>{if(afterRow)afterRow.insertAdjacentHTML("afterend",roleInput(""));else builder.insertAdjacentHTML("beforeend",roleInput(""));bindRoleRemove();refreshIcons();(afterRow?afterRow.nextElementSibling:builder.lastElementChild).querySelector("[name='role']").focus()};
+  document.querySelector("[data-add-role]").addEventListener("click",()=>addRoleInput());
+  builder.addEventListener("keydown",e=>{if(e.key!=="Enter"||!e.target.matches("[name='role']"))return;e.preventDefault();if(!e.target.value.trim())return;const row=e.target.closest(".role-row"),next=row.nextElementSibling?.querySelector("[name='role']");if(next)next.focus();else addRoleInput(row)});
+  bindRoleRemove();
   document.querySelector("#cycle-form").addEventListener("submit",async e=>{e.preventDefault();const fd=new FormData(e.target);const roles=[...document.querySelectorAll("[name='role']")].map(i=>i.value.trim()).filter(Boolean);const start=fd.get("start"),end=fd.get("end"),weekday=Number(fd.get("weekday"));const dates=weeklyDatesBetween(start,end,weekday);if(!dates.length){toast("The date range does not include the selected weekday.","circle-alert");return}const payload={churchId:church().id,name:fd.get("name"),start,end,roles,dates};let c;try{const result=await api.call("createCycle",payload);if(!result.cycle)throw new Error("The server did not return the created cycle.");c=result.cycle}catch(error){toast(error.message,"circle-alert");return}store.state.activeCycleId=c.id;store.state.cycles.unshift(c);store.save();closeModal();location.hash="cycles";route();toast("Cycle created","calendar-check")}); refreshIcons();
 }
 
-function roleInput(value) { return `<div class="role-row"><input name="role" value="${esc(value)}" placeholder="Role name" required><button class="icon-btn" type="button" data-remove-role title="Remove role">${icon("trash-2")}</button></div>`; }
+function roleInput(value) { return `<div class="role-row"><input name="role" value="${esc(value)}" placeholder="Role name — press Enter for next" required><button class="icon-btn" type="button" data-remove-role title="Remove role">${icon("trash-2")}</button></div>`; }
 function bindRoleRemove(){document.querySelectorAll("[data-remove-role]").forEach(b=>b.onclick=()=>{if(document.querySelectorAll(".role-row").length>1)b.closest(".role-row").remove()})}
 function weeklyDatesBetween(start,end,weekday=0){const out=[];let d=new Date(`${start}T00:00:00`),last=new Date(`${end}T00:00:00`);if(Number.isNaN(d.getTime())||Number.isNaN(last.getTime())||d>last)return out;d.setDate(d.getDate()+(Number(weekday)-d.getDay()+7)%7);while(d<=last){out.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);d.setDate(d.getDate()+7)}return out}
 
@@ -539,7 +543,6 @@ async function copyLink(path){const url=`${location.href.split("#")[0]}#${path}`
 
 window.addEventListener("hashchange",route);
 window.addEventListener("DOMContentLoaded",route);
-
 
 
 
