@@ -1,5 +1,5 @@
 /* Set this to the deployed Google Apps Script Web App URL for production. */
-const API_URL = "https://script.google.com/macros/s/AKfycbwT1kT0k5LewInuKf5qKjy7CUdwJeeqlwVvnR-h01ECLA3pP2ChtYBduPNInLspHKKp/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxdAN0pvjYQIooJCayx8d77CdFDEz3PIU6-r9kOWIutNca5cAhYkqmBmiVFdq9t1IYo/exec";
 
 const app = document.querySelector("#app");
 
