@@ -320,7 +320,7 @@ function renderRoster() {
         <div><div class="metric"><span>Positions filled</span><strong>${filledPositions} / ${totalPositions}</strong></div><div class="metric"><span>Availability conflicts</span><strong class="${conflicts ? "warn" : "good"}">${conflicts}</strong></div><div class="metric"><span>Load spread</span><strong>${loadSpread}</strong></div><div class="metric"><span>Locked placements</span><strong>${assignments.filter(a=>a.locked).length}</strong></div></div>
         <div><button class="btn btn-primary" style="width:100%" data-optimize>${icon("wand-sparkles")} Optimize</button></div>
       </div></aside>
-      <section class="panel"><div class="panel-head"><div><h3>Service assignments</h3><p>Drag participants between matching roles. Click the lock to preserve a placement.</p></div><span class="status ${esc(cycle.status)}">${esc(cycle.status)}</span></div><div class="table-wrap"><div class="roster-board">${cycle.dates.map(d=>rosterDate(d, cycle.roles, assignments)).join("")}</div></div></section>
+      <section class="panel"><div class="panel-head"><div><h3>Service assignments</h3><p>Drag participants between matching roles. Click the lock to preserve a placement.</p></div><span class="status ${esc(cycle.status)}">${esc(cycle.status)}</span></div><div class="table-wrap"><div class="roster-board" style="--role-count:${cycle.roles.length}">${cycle.dates.map(d=>rosterDate(d, cycle.roles, assignments)).join("")}</div></div></section>
     </div>`;
   bindRoster(); refreshIcons();
 }
@@ -498,7 +498,6 @@ async function copyLink(path){const url=`${location.href.split("#")[0]}#${path}`
 
 window.addEventListener("hashchange",route);
 window.addEventListener("DOMContentLoaded",route);
-
 
 
 

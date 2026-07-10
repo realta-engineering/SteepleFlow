@@ -192,8 +192,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .segmented { display: grid; grid-template-columns: repeat(2,1fr); padding: 3px; border-radius: 6px; background: var(--surface-alt); }
 .segmented button { padding: 6px; border: 0; border-radius: 4px; color: var(--muted); background: transparent; font-size: 10px; font-weight: 600; }
 .segmented button.active { color: var(--ink); background: white; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
-.roster-board { min-width: 720px; }
-.roster-date { display: grid; grid-template-columns: 132px repeat(4,minmax(120px,1fr)); border-bottom: 1px solid var(--line); }
+.roster-board { min-width: calc(132px + var(--role-count, 4) * 120px); }
+.roster-date { display: grid; grid-template-columns: 132px repeat(var(--role-count, 4),minmax(120px,1fr)); border-bottom: 1px solid var(--line); }
 .roster-date:last-child { border: 0; }
 .date-cell { padding: 13px; background: var(--surface-alt); border-right: 1px solid var(--line); }
 .date-cell strong, .date-cell small { display: block; }
