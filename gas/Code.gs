@@ -27,8 +27,24 @@ function setupDatabase() {
     }
   });
   PropertiesService.getScriptProperties().setProperty("SPREADSHEET_ID", ss.getId());
-  ensureSuperAdmin_("Super Admin", "super@demo.com", "admin123");
-  return "Database ready. Change the seeded super-admin password immediately.";
+  return "Database ready.";
+}
+
+/** Create or replace the super-admin from one-time Script Properties. */
+function configureSuperAdmin() {
+  const properties = PropertiesService.getScriptProperties();
+  const name = properties.getProperty("INITIAL_ADMIN_NAME");
+  const email = properties.getProperty("INITIAL_ADMIN_EMAIL");
+  const password = properties.getProperty("INITIAL_ADMIN_PASSWORD");
+  if (!name || !email || !password) throw new Error("Set INITIAL_ADMIN_NAME, INITIAL_ADMIN_EMAIL, and INITIAL_ADMIN_PASSWORD in Script Properties.");
+  if (String(password).length < 10) throw new Error("Use a password of at least 10 characters.");
+  const existing = rows_("Admins").find(a => a.role === "super");
+  const normalizedEmail = String(email).trim().toLowerCase();
+  if (existing) updateWhere_("Admins", row => row.id === existing.id, row => Object.assign(row, { name: clean_(name, 120), email: normalizedEmail, passwordHash: hashPassword_(password), active: true }));
+  else ensureSuperAdmin_(name, normalizedEmail, password);
+  deleteWhere_("Sessions", row => row.role === "super");
+  properties.deleteProperty("INITIAL_ADMIN_PASSWORD");
+  return "Super-admin configured. The initial password property was removed.";
 }
 
 /** Reset an administrator password from the Apps Script editor. */

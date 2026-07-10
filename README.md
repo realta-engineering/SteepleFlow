@@ -2,20 +2,9 @@
 
 A multi-church roster management system built for GitHub Pages, Google Apps Script, and Google Sheets.
 
-## Demo
+## Frontend
 
-Open `index.html` directly or serve the directory with any static server. Demo mode is enabled while `API_URL` in `app.js` is blank.
-
-- Church admin: `grace@demo.com` / `grace123`
-- Super-admin: `super@demo.com` / `admin123`
-- Participant form: `#join/join-GR8AUG26`
-- Published roster: `#published/roster-GR8AUG26`
-
-Demo data is stored in browser `localStorage`. Use the browser console command below to restore the original demo state:
-
-```js
-localStorage.removeItem("steepleflow_state"); location.reload();
-```
+Set `API_URL` at the top of `app.js` to the deployed Google Apps Script `/exec` URL, then serve the repository with a static web server. A new installation starts with no churches, cycles, participants, or assignments.
 
 ## Google Apps Script setup
 
@@ -23,10 +12,11 @@ localStorage.removeItem("steepleflow_state"); location.reload();
 2. Open **Extensions > Apps Script** from the Sheet.
 3. Add `gas/Code.gs` and replace the generated manifest with `gas/appsscript.json`.
 4. Run `setupDatabase()` once from the Apps Script editor and approve the requested Sheet permissions.
-5. Change the seeded super-admin password by running `setAdminPassword("super@demo.com", "a-long-unique-password")` from the editor.
-6. Choose **Deploy > New deployment > Web app**. Execute as yourself and allow access to anyone. Participant links require anonymous API access; authorization is enforced in the application layer.
-7. Copy the `/exec` deployment URL into `API_URL` at the top of `app.js`.
-8. Commit `index.html`, `styles.css`, and `app.js`, then enable GitHub Pages for the repository branch.
+5. In **Project Settings > Script Properties**, add `INITIAL_ADMIN_NAME`, `INITIAL_ADMIN_EMAIL`, and `INITIAL_ADMIN_PASSWORD`. Use a unique password of at least 10 characters.
+6. Run `configureSuperAdmin()` once. It creates or replaces the super-admin and removes `INITIAL_ADMIN_PASSWORD`.
+7. Choose **Deploy > New deployment > Web app**. Execute as yourself and allow access to anyone. Participant links require anonymous API access; authorization is enforced in the application layer.
+8. Copy the `/exec` deployment URL into `API_URL` at the top of `app.js`.
+9. Commit `index.html`, `styles.css`, and `app.js`, then enable GitHub Pages for the repository branch.
 
 Each Apps Script code update requires creating a new deployment version. Keep the same deployment URL when editing the existing deployment.
 

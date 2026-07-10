@@ -181,7 +181,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 
 .roster-layout { display: grid; grid-template-columns: 232px minmax(0,1fr); gap: 14px; }
 .optimizer-panel { position: sticky; top: 84px; align-self: start; }
-.score-ring { width: 94px; height: 94px; display: grid; place-items: center; margin: 5px auto 16px; border-radius: 50%; background: conic-gradient(var(--primary) 0 92%, var(--line) 92%); }
+.score-ring { width: 94px; height: 94px; display: grid; place-items: center; margin: 5px auto 16px; border-radius: 50%; background: conic-gradient(var(--primary) 0 var(--score, 0%), var(--line) var(--score, 0%)); }
 .score-inner { width: 73px; height: 73px; display: grid; place-items: center; border-radius: 50%; background: white; text-align: center; }
 .score-inner strong { display: block; font-size: 20px; line-height: 1; }
 .score-inner small { color: var(--muted); font-size: 9px; text-transform: uppercase; }
@@ -226,7 +226,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .login-box > p { margin-bottom: 27px; color: var(--muted); }
 .login-form { display: grid; gap: 14px; }
 .login-help { display: flex; justify-content: space-between; font-size: 11px; }
-.demo-note { margin-top: 20px; padding: 11px 12px; border-left: 3px solid #e9b85e; background: #fff9ed; color: #6b5a36; font-size: 11px; }
 .login-visual { position: relative; overflow: hidden; display: flex; align-items: flex-end; padding: 52px; color: white; background: #153d34; }
 .login-visual::before { content: ""; position: absolute; inset: 0; opacity: .7; background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px); background-size: 44px 44px; }
 .visual-art { position: absolute; inset: 8% 6% 12% 10%; }
