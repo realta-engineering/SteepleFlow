@@ -80,6 +80,8 @@ function doPost(e) {
       createChurch: () => withLock_(lock, () => createChurch_(session, request.payload)),
       updateChurch: () => withLock_(lock, () => updateChurch_(session, request.payload)),
       createCycle: () => withLock_(lock, () => createCycle_(session, request.payload)),
+      deleteCycle: () => withLock_(lock, () => deleteCycle_(session, request.payload)),
+      addParticipant: () => withLock_(lock, () => addParticipant_(session, request.payload)),
       saveAssignments: () => withLock_(lock, () => saveAssignments_(session, request.payload)),
       publishRoster: () => withLock_(lock, () => publishRoster_(session, request.payload))
     };
@@ -186,6 +188,34 @@ function createCycle_(session, payload) {
   });
   append_("Cycles", row);
   return { cycle: decodeCycle_(row) };
+}
+
+function deleteCycle_(session, payload) {
+  const cycle = cycleForSession_(session, (payload || {}).cycleId);
+  deleteWhere_("Assignments", row => row.cycleId === cycle.id);
+  deleteWhere_("Participants", row => row.cycleId === cycle.id);
+  deleteWhere_("Cycles", row => row.id === cycle.id);
+  return { cycleId: cycle.id };
+}
+
+function addParticipant_(session, payload) {
+  const cycle = decodeCycle_(cycleForSession_(session, (payload || {}).cycleId));
+  const participant = (payload || {}).participant || {};
+  if (!participant.name || !participant.email || !Array.isArray(participant.roles) || !participant.roles.length) throw new Error("Name, email, and at least one role are required.");
+  const roles = participant.roles.filter(role => cycle.roles.includes(role));
+  const unavailable = (participant.unavailable || []).filter(date => cycle.dates.includes(date));
+  if (!roles.length) throw new Error("The selected roles are not valid for this cycle.");
+  const email = String(participant.email).trim().toLowerCase();
+  const existing = rows_("Participants").find(row => row.cycleId === cycle.id && String(row.email).toLowerCase() === email);
+  const row = {
+    id: existing ? existing.id : id_("p"), cycleId: cycle.id, churchId: cycle.churchId,
+    name: clean_(participant.name, 120), email,
+    roles: JSON.stringify(roles), unavailable: JSON.stringify(unavailable),
+    submittedAt: new Date().toISOString()
+  };
+  deleteWhere_("Participants", existing => existing.cycleId === cycle.id && String(existing.email).toLowerCase() === email);
+  append_("Participants", row);
+  return { participant: decodeParticipant_(row) };
 }
 
 function saveAssignments_(session, payload) {
