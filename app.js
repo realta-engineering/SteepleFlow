@@ -167,7 +167,7 @@ function renderShell(view) {
   document.querySelectorAll("[data-route]").forEach(el => el.addEventListener("click", () => { location.hash = el.dataset.route; }));
   document.querySelector("#menu-toggle")?.addEventListener("click", () => document.querySelector("#sidebar").classList.toggle("open"));
   document.querySelectorAll("[data-action='new-cycle']").forEach(el => el.addEventListener("click", showCycleModal));
-  document.querySelectorAll("[data-action='new-church']").forEach(el => el.addEventListener("click", showChurchModal));
+  document.querySelectorAll("[data-action='new-church']").forEach(el => el.addEventListener("click", () => showChurchModal()));
   if (view === "dashboard") renderDashboard();
   if (view === "cycles") renderCycles();
   if (view === "participants") renderParticipants();
@@ -316,12 +316,16 @@ function renderChurches() {
     <div class="page-head"><div><h2>Church workspaces</h2><p>Create and manage church accounts and their assigned administrators.</p></div><button class="btn btn-primary" data-action="new-church">${icon("plus")} Add church</button></div>
     ${stats([["Active churches",churches.filter(c=>c.active).length,"building-2","All systems operational"],["Church admins",churches.length,"shield-check","Unique access assigned"],["Total participants",churches.reduce((a,c)=>a+c.members,0),"users","Across all workspaces"],["Active cycles",5,"calendar-range","2 collecting responses"]])}
     <section class="panel" style="margin-top:16px"><div class="table-wrap"><table class="data-table"><thead><tr><th>Church</th><th>Location</th><th>Administrator</th><th>Participants</th><th>Status</th><th></th></tr></thead><tbody>${churches.map(c=>`<tr><td><div class="person"><span class="avatar">${initials(c.name)}</span><span><strong>${esc(c.name)}</strong><small>ID: ${esc(c.id)}</small></span></div></td><td>${esc(c.city)}</td><td><strong>${esc(c.adminName)}</strong><small style="display:block;color:var(--muted)">${esc(c.adminEmail)}</small></td><td>${c.members}</td><td><span class="status ${c.active?"open":"closed"}">${c.active?"Active":"Suspended"}</span></td><td><button class="icon-btn" data-edit-church="${c.id}" title="Edit church">${icon("pencil")}</button></td></tr>`).join("")}</tbody></table></div></section>`;
-  const target=document.querySelector("#view"); target.querySelector("[data-action='new-church']").addEventListener("click",showChurchModal); target.querySelectorAll("[data-edit-church]").forEach(b=>b.addEventListener("click",()=>showChurchModal(store.state.churches.find(c=>c.id===b.dataset.editChurch)))); refreshIcons();
+  const target=document.querySelector("#view"); target.querySelector("[data-action='new-church']").addEventListener("click",()=>showChurchModal()); target.querySelectorAll("[data-edit-church]").forEach(b=>b.addEventListener("click",()=>showChurchModal(store.state.churches.find(c=>c.id===b.dataset.editChurch)))); refreshIcons();
 }
 
 function renderSettings() {
-  const c=church();
-  document.querySelector("#view").innerHTML=`<div class="page-head"><div><h2>Workspace settings</h2><p>Manage your organization details and scheduling defaults.</p></div></div><section class="panel" style="max-width:720px"><div class="panel-head"><h3>General information</h3></div><form class="panel-body" id="settings-form"><div class="field-grid"><div class="field"><label>Church name</label><input value="${esc(c.name)}"></div><div class="field"><label>City</label><input value="${esc(c.city)}"></div><div class="field"><label>Default service time</label><input type="text" value="10:00 AM"></div><div class="field"><label>Time zone</label><select><option>Asia/Kuala Lumpur</option></select></div></div><div class="form-section"><h3>Scheduling defaults</h3><label class="checkbox-row"><input type="checkbox" checked> Prevent participants from serving in two roles on the same date</label><label class="checkbox-row" style="margin-top:10px"><input type="checkbox" checked> Prefer balanced assignments across the cycle</label></div><div class="form-section"><button class="btn btn-primary">${icon("save")} Save settings</button></div></form></section>`;
+  const user=store.state.session;
+  const c=user.role === "admin" ? church() : null;
+  const fields=c
+    ? `<div class="field-grid"><div class="field"><label>Church name</label><input value="${esc(c.name)}"></div><div class="field"><label>City</label><input value="${esc(c.city)}"></div><div class="field"><label>Default service time</label><input type="text" value="10:00 AM"></div><div class="field"><label>Time zone</label><select><option>Asia/Kuala Lumpur</option></select></div></div><div class="form-section"><h3>Scheduling defaults</h3><label class="checkbox-row"><input type="checkbox" checked> Prevent participants from serving in two roles on the same date</label><label class="checkbox-row" style="margin-top:10px"><input type="checkbox" checked> Prefer balanced assignments across the cycle</label></div>`
+    : `<div class="field-grid"><div class="field"><label>Name</label><input value="${esc(user.name)}"></div><div class="field"><label>Email address</label><input type="email" value="${esc(user.email)}"></div></div>`;
+  document.querySelector("#view").innerHTML=`<div class="page-head"><div><h2>${c ? "Workspace" : "Account"} settings</h2><p>Manage your ${c ? "organization details and scheduling defaults" : "administrator profile"}.</p></div></div><section class="panel" style="max-width:720px"><div class="panel-head"><h3>General information</h3></div><form class="panel-body" id="settings-form">${fields}<div class="form-section"><button class="btn btn-primary">${icon("save")} Save settings</button></div></form></section>`;
   document.querySelector("#settings-form").addEventListener("submit",e=>{e.preventDefault();toast("Settings saved","save")}); refreshIcons();
 }
 
@@ -340,17 +344,19 @@ function showChurchModal(existing=null) {
   document.querySelector("#church-form").addEventListener("submit", async e => {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(e.target));
-    let localChurch = existing;
     if (existing) {
       data.id = existing.id;
       data.active = e.target.active.checked;
-      Object.assign(existing, data);
-    } else {
-      localChurch = { id: `church_${Date.now()}`, name: data.name, city: data.city, adminName: data.adminName, adminEmail: data.adminEmail, active: true, members: 0 };
-      store.state.churches.push(localChurch);
     }
-    const result = await api.call(existing ? "updateChurch" : "createChurch", data);
-    if (result.churchId) localChurch.id = result.churchId;
+    let result;
+    try {
+      result = await api.call(existing ? "updateChurch" : "createChurch", data);
+    } catch (error) {
+      toast(error.message, "circle-alert");
+      return;
+    }
+    if (existing) Object.assign(existing, data);
+    else store.state.churches.push({ id: result.churchId || `church_${Date.now()}`, name: data.name, city: data.city, adminName: data.adminName, adminEmail: data.adminEmail, active: true, members: 0 });
     store.save();
     closeModal();
     renderChurches();
