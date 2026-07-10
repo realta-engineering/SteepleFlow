@@ -302,24 +302,28 @@ function renderRoster() {
     bindRoutes(document.querySelector("#view")); refreshIcons(); return;
   }
   const assignments = assignmentsFor(cycle);
+  const people = participants();
   const totalPositions = cycle.dates.length * cycle.roles.length;
   const filledPositions = filledPositionCount(cycle, assignments);
   const conflicts = assignments.filter(a => {
     const person = store.state.participants.find(p => p.id === a.participantId);
     return !person || !person.roles.includes(a.role) || person.unavailable.includes(a.date) || assignments.some(other => other.id !== a.id && other.date === a.date && other.participantId === a.participantId);
   }).length;
-  const loads = participants().map(p => assignments.filter(a => a.participantId === p.id).length);
+  const loads = people.map(p => assignments.filter(a => a.participantId === p.id).length);
   const loadSpread = loads.length ? Math.max(...loads) - Math.min(...loads) : 0;
   const coverage = totalPositions ? Math.round(filledPositions / totalPositions * 100) : 0;
   document.querySelector("#view").innerHTML = `
     <div class="page-head"><div><h2>${esc(cycle.name)}</h2><p>Assign participants, lock key placements, and optimize the remaining roster.</p></div><div class="page-actions"><button class="btn btn-secondary" data-save>${icon("save")} Save draft</button><button class="btn btn-primary" data-publish>${icon("send")} Publish roster</button></div></div>
     <div class="steps"><div class="step complete">1. Cycle setup</div><div class="step complete">2. Availability</div><div class="step active">3. Assign roles</div><div class="step">4. Publish</div></div>
     <div class="roster-layout">
-      <aside class="panel optimizer-panel"><div class="panel-head"><div><h3>Roster health</h3><p>Balance and availability</p></div></div><div class="panel-body">
-        <div class="score-ring" style="--score:${coverage}%"><div class="score-inner"><span><strong>${coverage}</strong><small>Coverage</small></span></div></div>
-        <div><div class="metric"><span>Positions filled</span><strong>${filledPositions} / ${totalPositions}</strong></div><div class="metric"><span>Availability conflicts</span><strong class="${conflicts ? "warn" : "good"}">${conflicts}</strong></div><div class="metric"><span>Load spread</span><strong>${loadSpread}</strong></div><div class="metric"><span>Locked placements</span><strong>${assignments.filter(a=>a.locked).length}</strong></div></div>
-        <div><button class="btn btn-primary" style="width:100%" data-optimize>${icon("wand-sparkles")} Optimize</button></div>
-      </div></aside>
+      <div class="roster-sidebar">
+        <aside class="panel participant-pool-panel"><div class="panel-head"><div><h3>Participants</h3><p>Drag a person into an open role.</p></div><strong>${people.length}</strong></div><div class="participant-pool" data-participant-pool>${people.length ? people.map(p=>rosterParticipant(p,cycle)).join("") : `<p class="participant-pool-empty">No participants yet.</p>`}</div></aside>
+        <aside class="panel optimizer-panel"><div class="panel-head"><div><h3>Roster health</h3><p>Balance and availability</p></div></div><div class="panel-body">
+          <div class="score-ring" style="--score:${coverage}%"><div class="score-inner"><span><strong>${coverage}</strong><small>Coverage</small></span></div></div>
+          <div><div class="metric"><span>Positions filled</span><strong>${filledPositions} / ${totalPositions}</strong></div><div class="metric"><span>Availability conflicts</span><strong class="${conflicts ? "warn" : "good"}">${conflicts}</strong></div><div class="metric"><span>Load spread</span><strong>${loadSpread}</strong></div><div class="metric"><span>Locked placements</span><strong>${assignments.filter(a=>a.locked).length}</strong></div></div>
+          <div><button class="btn btn-primary" style="width:100%" data-optimize>${icon("wand-sparkles")} Optimize</button></div>
+        </div></aside>
+      </div>
       <section class="panel"><div class="panel-head"><div><h3>Service assignments</h3><p>Drag participants between matching roles. Click the lock to preserve a placement.</p></div><span class="status ${esc(cycle.status)}">${esc(cycle.status)}</span></div><div class="table-wrap"><div class="roster-board" style="--role-count:${cycle.roles.length}">${cycle.dates.map(d=>rosterDate(d, cycle.roles, assignments)).join("")}</div></div></section>
     </div>`;
   bindRoster(); refreshIcons();
@@ -327,6 +331,19 @@ function renderRoster() {
 
 function rosterDate(date, roles, assignments) {
   return `<div class="roster-date"><div class="date-cell"><strong>${dateLabel(date,{weekday:"short",day:"numeric"})}</strong><small>${dateLabel(date,{month:"long",year:"numeric"})}</small></div>${roles.map(role => { const a=assignments.find(x=>x.date===date&&x.role===role); const p=a&&store.state.participants.find(x=>x.id===a.participantId); return `<div class="assignment-cell dropzone" data-date="${date}" data-role="${esc(role)}"><div class="assignment-label"><span>${esc(role)}</span><span>${p ? "1 / 1" : "0 / 1"}</span></div>${p ? `<div class="assignment" data-id="${a.id}"><span class="avatar">${initials(p.name)}</span><strong>${esc(p.name)}</strong><button class="btn btn-ghost btn-sm lock" data-lock="${a.id}" title="${a.locked ? "Unlock placement" : "Lock placement"}">${icon(a.locked ? "lock-keyhole" : "lock-keyhole-open")}</button></div>` : ""}</div>`; }).join("")}</div>`;
+}
+
+function rosterParticipant(person, cycle) {
+  const unavailable = person.unavailable.filter(date => cycle.dates.includes(date)).length;
+  return `<div class="roster-participant" data-participant-id="${esc(person.id)}"><span class="avatar">${initials(person.name)}</span><span class="roster-participant-info"><strong>${esc(person.name)}</strong><small>${person.roles.map(esc).join(" · ")}</small><small>${unavailable ? `${unavailable} unavailable ${unavailable === 1 ? "date" : "dates"}` : "Available all dates"}</small></span>${icon("grip-vertical","drag-handle")}</div>`;
+}
+
+function placementConflict(person, date, role, assignments, ignoreIds = []) {
+  if (!person) return "Participant not found.";
+  if (!person.roles.includes(role)) return `${person.name} does not serve in ${role}.`;
+  if (person.unavailable.includes(date)) return `${person.name} is unavailable on ${fullDate(date)}.`;
+  if (assignments.some(a => !ignoreIds.includes(a.id) && a.date === date && a.participantId === person.id)) return `${person.name} already has an assignment on ${fullDate(date)}.`;
+  return "";
 }
 
 function optimizeRoster(showToast = true) {
@@ -349,19 +366,43 @@ function bindRoster() {
   document.querySelector("[data-save]").addEventListener("click", async () => { await api.call("saveAssignments", { cycleId: currentCycle().id, assignments: store.state.assignments.filter(a => !a.cycleId || a.cycleId === currentCycle().id) }); toast("Draft roster saved", "save"); });
   document.querySelector("[data-publish]").addEventListener("click", publishRoster);
   document.querySelectorAll("[data-lock]").forEach(btn => btn.addEventListener("click", e => { e.stopPropagation(); const a=store.state.assignments.find(x=>x.id===btn.dataset.lock); a.locked=!a.locked; store.save(); renderRoster(); toast(a.locked ? "Placement locked" : "Placement unlocked", a.locked ? "lock" : "lock-open"); }));
-  if (window.Sortable) document.querySelectorAll(".dropzone").forEach(zone => new Sortable(zone, {
+  if (!window.Sortable) return;
+  const pool = document.querySelector("[data-participant-pool]");
+  if (pool) new Sortable(pool, { group: { name: "roster", pull: "clone", put: false }, sort: false, draggable: ".roster-participant", animation: 140, revertOnSpill: true });
+  document.querySelectorAll(".dropzone").forEach(zone => new Sortable(zone, {
     group: "roster", draggable: ".assignment", animation: 140,
+    onAdd(evt) {
+      const participantId = evt.item.dataset.participantId;
+      if (!participantId) return;
+      const cycle = currentCycle();
+      const assignments = assignmentsFor(cycle);
+      const target = evt.to;
+      const person = store.state.participants.find(p => p.id === participantId);
+      const conflict = placementConflict(person, target.dataset.date, target.dataset.role, assignments);
+      const occupied = assignments.some(a => a.date === target.dataset.date && a.role === target.dataset.role);
+      if (conflict || occupied) {
+        renderRoster();
+        toast(conflict || "That role already has an assignment.", "circle-alert");
+        return;
+      }
+      store.state.assignments.push({ id: `a_${Date.now()}_${Math.random().toString(36).slice(2,8)}`, cycleId: cycle.id, date: target.dataset.date, role: target.dataset.role, participantId, locked: false });
+      store.save(); renderRoster(); toast(`${person.name} assigned`, "user-check");
+    },
     onEnd(evt) {
-      const id = evt.item.dataset.id; const a=store.state.assignments.find(x=>x.id===id); const target=evt.to;
-      const occupied=store.state.assignments.find(x=>x.date===target.dataset.date&&x.role===target.dataset.role&&x.id!==id);
+      const id = evt.item.dataset.id;
+      if (!id) return;
+      const cycle = currentCycle(); const assignments = assignmentsFor(cycle);
+      const a=store.state.assignments.find(x=>x.id===id); const target=evt.to;
+      if (!a || !target.dataset.date || !target.dataset.role) { renderRoster(); return; }
+      const occupied=assignments.find(x=>x.date===target.dataset.date&&x.role===target.dataset.role&&x.id!==id);
       const source={date:evt.from.dataset.date,role:evt.from.dataset.role};
       const person=store.state.participants.find(p=>p.id===a.participantId);
-      const targetValid=person.roles.includes(target.dataset.role)&&!person.unavailable.includes(target.dataset.date);
-      if (a.locked || !targetValid) { renderRoster(); toast(a.locked ? "Unlock this placement before moving it" : "Participant is not available for that role or date", "circle-alert"); return; }
+      const targetConflict=placementConflict(person,target.dataset.date,target.dataset.role,assignments,[a.id]);
+      if (a.locked || targetConflict) { renderRoster(); toast(a.locked ? "Unlock this placement before moving it" : targetConflict, "circle-alert"); return; }
       if (occupied) {
         const other=store.state.participants.find(p=>p.id===occupied.participantId);
-        const swapValid=!occupied.locked&&other.roles.includes(source.role)&&!other.unavailable.includes(source.date);
-        if (!swapValid) { renderRoster(); toast(occupied.locked ? "The target placement is locked" : "Those assignments cannot be swapped", "circle-alert"); return; }
+        const swapConflict=placementConflict(other,source.date,source.role,assignments,[occupied.id,a.id]);
+        if (occupied.locked || swapConflict) { renderRoster(); toast(occupied.locked ? "The target placement is locked" : swapConflict, "circle-alert"); return; }
         occupied.date=source.date;occupied.role=source.role;
       }
       a.date=target.dataset.date;a.role=target.dataset.role;store.save();renderRoster();toast(occupied?"Assignments swapped":"Assignment updated","move");
@@ -498,8 +539,6 @@ async function copyLink(path){const url=`${location.href.split("#")[0]}#${path}`
 
 window.addEventListener("hashchange",route);
 window.addEventListener("DOMContentLoaded",route);
-
-
 
 
 

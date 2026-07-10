@@ -181,7 +181,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .date-pill { display: inline-flex; align-items: center; gap: 7px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface-alt); font-size: 11px; }
 
 .roster-layout { display: grid; grid-template-columns: 232px minmax(0,1fr); gap: 14px; }
-.optimizer-panel { position: sticky; top: 84px; align-self: start; }
+.roster-sidebar { position: sticky; top: 84px; align-self: start; display: grid; gap: 14px; }
 .score-ring { width: 94px; height: 94px; display: grid; place-items: center; margin: 5px auto 16px; border-radius: 50%; background: conic-gradient(var(--primary) 0 var(--score, 0%), var(--line) var(--score, 0%)); }
 .score-inner { width: 73px; height: 73px; display: grid; place-items: center; border-radius: 50%; background: white; text-align: center; }
 .score-inner strong { display: block; font-size: 20px; line-height: 1; }
@@ -207,6 +207,17 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .assignment strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
 .lock { margin-left: auto; color: var(--amber); }
 .lock .lucide { width: 12px; }
+.participant-pool { max-height: 330px; display: grid; gap: 7px; padding: 10px; overflow-y: auto; }
+.participant-pool-empty { margin: 4px; color: var(--muted); font-size: 11px; text-align: center; }
+.roster-participant { display: grid; grid-template-columns: 30px minmax(0,1fr) 14px; gap: 8px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: white; cursor: grab; }
+.roster-participant:hover { border-color: var(--line-strong); box-shadow: 0 3px 10px rgba(32,53,46,.08); }
+.roster-participant:active { cursor: grabbing; }
+.roster-participant .avatar { width: 30px; height: 30px; font-size: 10px; }
+.roster-participant-info { min-width: 0; }
+.roster-participant-info strong, .roster-participant-info small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.roster-participant-info strong { font-size: 11px; }
+.roster-participant-info small { color: var(--muted); font-size: 9px; }
+.drag-handle { width: 14px; color: var(--muted); }
 .sortable-ghost { opacity: .35; }
 
 .modal-backdrop { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 18px; background: rgba(11,26,22,.58); }
@@ -280,7 +291,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
   :root { --sidebar: 214px; }
   .stats-grid { grid-template-columns: repeat(2,1fr); }
   .roster-layout { grid-template-columns: 1fr; }
-  .optimizer-panel { position: static; }
+  .roster-sidebar { position: static; grid-template-columns: minmax(0,1fr) minmax(240px,.65fr); }
   .optimizer-panel .panel-body { display: grid; grid-template-columns: 110px 1fr 160px; gap: 15px; align-items: center; }
   .score-ring { margin: 0; }
   .published-roles { grid-template-columns: repeat(2,1fr); }
@@ -313,6 +324,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
   .published-role { border-left: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
   .optimizer-panel .panel-body { grid-template-columns: 1fr; }
   .score-ring { margin: 0 auto; }
+  .roster-sidebar { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 430px) {
