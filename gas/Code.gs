@@ -1,0 +1,230 @@
+﻿const APP = {
+  SESSION_HOURS: 12,
+  SHEETS: {
+    Admins: ["id", "role", "churchId", "name", "email", "passwordHash", "active", "createdAt"],
+    Churches: ["id", "name", "city", "adminName", "adminEmail", "active", "members", "createdAt"],
+    Cycles: ["id", "churchId", "name", "start", "end", "status", "token", "publicToken", "roles", "dates", "createdAt"],
+    Participants: ["id", "cycleId", "churchId", "name", "email", "roles", "unavailable", "submittedAt"],
+    Assignments: ["id", "cycleId", "date", "role", "participantId", "locked", "updatedAt"],
+    Sessions: ["token", "email", "role", "churchId", "name", "expiresAt"]
+  }
+};
+
+/**
+ * Run once from the Apps Script editor. The script must be bound to the
+ * spreadsheet that will serve as the database.
+ */
+function setupDatabase() {
+  const ss = SpreadsheetApp.getActive();
+  Object.keys(APP.SHEETS).forEach(name => {
+    let sheet = ss.getSheetByName(name);
+    if (!sheet) sheet = ss.insertSheet(name);
+    if (sheet.getLastRow() === 0) {
+      sheet.getRange(1, 1, 1, APP.SHEETS[name].length).setValues([APP.SHEETS[name]]);
+      sheet.setFrozenRows(1);
+      sheet.getRange(1, 1, 1, APP.SHEETS[name].length).setFontWeight("bold").setBackground("#173f35").setFontColor("#ffffff");
+      sheet.autoResizeColumns(1, APP.SHEETS[name].length);
+    }
+  });
+  PropertiesService.getScriptProperties().setProperty("SPREADSHEET_ID", ss.getId());
+  ensureSuperAdmin_("Super Admin", "super@demo.com", "admin123");
+  return "Database ready. Change the seeded super-admin password immediately.";
+}
+
+/** Reset an administrator password from the Apps Script editor. */
+function setAdminPassword(email, newPassword) {
+  if (!email || !newPassword || String(newPassword).length < 10) throw new Error("Use a password of at least 10 characters.");
+  const normalized = String(email).trim().toLowerCase();
+  let found = false;
+  updateWhere_("Admins", row => String(row.email).toLowerCase() === normalized, row => {
+    found = true;
+    return Object.assign(row, { passwordHash: hashPassword_(newPassword) });
+  });
+  if (!found) throw new Error("Administrator not found.");
+  deleteWhere_("Sessions", row => String(row.email).toLowerCase() === normalized);
+  return "Password updated and existing sessions revoked.";
+}
+function doGet() {
+  return json_({ ok: true, service: "SteepleFlow API", version: 1 });
+}
+
+function doPost(e) {
+  const lock = LockService.getScriptLock();
+  try {
+    const request = JSON.parse((e && e.postData && e.postData.contents) || "{}");
+    const publicActions = ["login", "getCycleByToken", "getPublishedRoster", "submitAvailability"];
+    let session = null;
+    if (!publicActions.includes(request.action)) session = requireSession_(request.token);
+    const handlers = {
+      login: () => login_(request.payload),
+      getCycleByToken: () => getCycleByToken_(request.payload),
+      getPublishedRoster: () => getPublishedRoster_(request.payload),
+      submitAvailability: () => withLock_(lock, () => submitAvailability_(request.payload)),
+      getBootstrap: () => getBootstrap_(session),
+      createChurch: () => withLock_(lock, () => createChurch_(session, request.payload)),
+      updateChurch: () => withLock_(lock, () => updateChurch_(session, request.payload)),
+      createCycle: () => withLock_(lock, () => createCycle_(session, request.payload)),
+      saveAssignments: () => withLock_(lock, () => saveAssignments_(session, request.payload)),
+      publishRoster: () => withLock_(lock, () => publishRoster_(session, request.payload))
+    };
+    if (!handlers[request.action]) throw new Error("Unknown API action.");
+    return json_(Object.assign({ ok: true }, handlers[request.action]() || {}));
+  } catch (error) {
+    return json_({ ok: false, error: error.message || "Unexpected server error." });
+  }
+}
+
+function login_(payload) {
+  if (!payload || !payload.email || !payload.password) throw new Error("Email and password are required.");
+  const email = String(payload.email).trim().toLowerCase();
+  const admin = rows_("Admins").find(row => String(row.email).toLowerCase() === email && truthy_(row.active));
+  if (!admin || admin.passwordHash !== hashPassword_(payload.password)) throw new Error("Email or password is incorrect.");
+  deleteWhere_("Sessions", row => Number(row.expiresAt) < Date.now() || String(row.email).toLowerCase() === email);
+  const session = {
+    token: token_(32), email, role: admin.role, churchId: admin.churchId || "",
+    name: admin.name, expiresAt: Date.now() + APP.SESSION_HOURS * 60 * 60 * 1000
+  };
+  append_("Sessions", session);
+  return { session: session, data: bootstrapData_(session) };
+}
+
+function getBootstrap_(session) {
+  return { data: bootstrapData_(session) };
+}
+
+function bootstrapData_(session) {
+  const allChurches = rows_("Churches");
+  const churches = session.role === "super" ? allChurches : allChurches.filter(c => c.id === session.churchId);
+  const churchIds = churches.map(c => c.id);
+  const cycles = rows_("Cycles").filter(c => churchIds.includes(c.churchId)).map(decodeCycle_);
+  const cycleIds = cycles.map(c => c.id);
+  const participants = rows_("Participants").filter(p => cycleIds.includes(p.cycleId)).map(decodeParticipant_);
+  const assignments = rows_("Assignments").filter(a => cycleIds.includes(a.cycleId)).map(decodeAssignment_);
+  return { churches, cycles, participants, assignments };
+}
+
+function getCycleByToken_(payload) {
+  const token = String((payload || {}).token || "");
+  const raw = rows_("Cycles").find(c => safeEqual_(String(c.token), token));
+  if (!raw || !["open", "published"].includes(raw.status)) throw new Error("This submission link is invalid or closed.");
+  const church = rows_("Churches").find(c => c.id === raw.churchId && truthy_(c.active));
+  if (!church) throw new Error("This church workspace is unavailable.");
+  return { cycle: decodeCycle_(raw), church: publicChurch_(church) };
+}
+
+function getPublishedRoster_(payload) {
+  const token = String((payload || {}).token || "");
+  const raw = rows_("Cycles").find(c => safeEqual_(String(c.publicToken), token));
+  if (!raw || raw.status !== "published") throw new Error("This roster is not published.");
+  const cycle = decodeCycle_(raw);
+  const church = rows_("Churches").find(c => c.id === cycle.churchId);
+  const participants = rows_("Participants").filter(p => p.cycleId === cycle.id).map(decodeParticipant_).map(p => ({ id: p.id, name: p.name }));
+  const assignments = rows_("Assignments").filter(a => a.cycleId === cycle.id).map(decodeAssignment_);
+  return { cycle, church: publicChurch_(church), participants, assignments };
+}
+
+function submitAvailability_(payload) {
+  if (!payload || !payload.token || !payload.participant) throw new Error("Incomplete availability response.");
+  const rawCycle = rows_("Cycles").find(c => safeEqual_(String(c.token), String(payload.token)));
+  if (!rawCycle || rawCycle.status !== "open") throw new Error("This availability request is closed.");
+  const cycle = decodeCycle_(rawCycle);
+  const p = payload.participant;
+  if (!p.name || !p.email || !Array.isArray(p.roles) || !p.roles.length) throw new Error("Name, email, and at least one role are required.");
+  const roles = p.roles.filter(role => cycle.roles.includes(role));
+  const unavailable = (p.unavailable || []).filter(date => cycle.dates.includes(date));
+  if (!roles.length) throw new Error("The selected roles are not valid for this cycle.");
+  const email = String(p.email).trim().toLowerCase();
+  deleteWhere_("Participants", row => row.cycleId === cycle.id && String(row.email).toLowerCase() === email);
+  append_("Participants", { id: p.id || id_("p"), cycleId: cycle.id, churchId: cycle.churchId, name: clean_(p.name, 120), email, roles: JSON.stringify(roles), unavailable: JSON.stringify(unavailable), submittedAt: new Date().toISOString() });
+  return { message: "Availability received." };
+}
+
+function createChurch_(session, payload) {
+  requireRole_(session, "super");
+  if (!payload.name || !payload.adminName || !payload.adminEmail) throw new Error("Church and administrator details are required.");
+  const email = String(payload.adminEmail).trim().toLowerCase();
+  if (rows_("Admins").some(a => String(a.email).toLowerCase() === email)) throw new Error("An administrator already uses this email.");
+  const churchId = id_("church");
+  const temporaryPassword = token_(9);
+  append_("Churches", { id: churchId, name: clean_(payload.name, 150), city: clean_(payload.city, 100), adminName: clean_(payload.adminName, 120), adminEmail: email, active: true, members: 0, createdAt: new Date().toISOString() });
+  append_("Admins", { id: id_("admin"), role: "admin", churchId, name: clean_(payload.adminName, 120), email, passwordHash: hashPassword_(temporaryPassword), active: true, createdAt: new Date().toISOString() });
+  return { churchId, temporaryPassword };
+}
+
+function updateChurch_(session, payload) {
+  requireRole_(session, "super");
+  if (!payload.id) throw new Error("Church id is required.");
+  updateWhere_("Churches", row => row.id === payload.id, row => Object.assign(row, {
+    name: clean_(payload.name || row.name, 150), city: clean_(payload.city || row.city, 100), active: payload.active !== false,
+    adminName: clean_(payload.adminName || row.adminName, 120), adminEmail: String(payload.adminEmail || row.adminEmail).toLowerCase()
+  }));
+  return { churchId: payload.id };
+}
+
+function createCycle_(session, payload) {
+  requireChurch_(session, payload.churchId);
+  if (!payload.name || !payload.start || !payload.end || !Array.isArray(payload.roles) || !payload.roles.length) throw new Error("Cycle dates and roles are required.");
+  const row = Object.assign({}, payload, {
+    id: payload.id || id_("cycle"), token: token_(24), publicToken: token_(24), status: "open",
+    roles: JSON.stringify(payload.roles.map(r => clean_(r, 80))), dates: JSON.stringify(payload.dates || []), createdAt: new Date().toISOString()
+  });
+  append_("Cycles", row);
+  return { cycle: decodeCycle_(row) };
+}
+
+function saveAssignments_(session, payload) {
+  const cycle = cycleForSession_(session, payload.cycleId);
+  const validRoles = decodeCycle_(cycle).roles;
+  const validDates = decodeCycle_(cycle).dates;
+  const assignments = (payload.assignments || []).map(a => {
+    if (!validRoles.includes(a.role) || !validDates.includes(a.date)) throw new Error("Assignment contains an invalid role or date.");
+    return { id: a.id || id_("assignment"), cycleId: cycle.id, date: a.date, role: a.role, participantId: a.participantId, locked: !!a.locked, updatedAt: new Date().toISOString() };
+  });
+  deleteWhere_("Assignments", row => row.cycleId === cycle.id);
+  assignments.forEach(a => append_("Assignments", a));
+  return { saved: (payload.assignments || []).length };
+}
+
+function publishRoster_(session, payload) {
+  saveAssignments_(session, payload);
+  updateWhere_("Cycles", row => row.id === payload.cycleId, row => Object.assign(row, { status: "published" }));
+  return { publicToken: rows_("Cycles").find(c => c.id === payload.cycleId).publicToken };
+}
+
+function requireSession_(token) {
+  const session = rows_("Sessions").find(s => safeEqual_(String(s.token), String(token || "")) && Number(s.expiresAt) > Date.now());
+  if (!session) throw new Error("Your session has expired. Please sign in again.");
+  return session;
+}
+function requireRole_(session, role) { if (!session || session.role !== role) throw new Error("You are not authorized for this action."); }
+function requireChurch_(session, churchId) { if (session.role !== "super" && session.churchId !== churchId) throw new Error("You cannot access another church workspace."); }
+function cycleForSession_(session, cycleId) { const cycle=rows_("Cycles").find(c=>c.id===cycleId);if(!cycle)throw new Error("Cycle not found.");requireChurch_(session,cycle.churchId);return cycle; }
+
+function sheet_(name) {
+  const id = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID");
+  const ss = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActive();
+  const sheet = ss.getSheetByName(name);
+  if (!sheet) throw new Error(`Missing ${name} sheet. Run setupDatabase first.`);
+  return sheet;
+}
+function rows_(name) { const sheet=sheet_(name),last=sheet.getLastRow();if(last<2)return[];const headers=APP.SHEETS[name];return sheet.getRange(2,1,last-1,headers.length).getValues().map(values=>Object.fromEntries(headers.map((h,i)=>[h,values[i]]))); }
+function append_(name, row) { const headers=APP.SHEETS[name];sheet_(name).appendRow(headers.map(h=>row[h]===undefined?"":row[h])); }
+function deleteWhere_(name, predicate) { const sheet=sheet_(name),data=rows_(name);for(let i=data.length-1;i>=0;i--)if(predicate(data[i]))sheet.deleteRow(i+2); }
+function updateWhere_(name, predicate, updater) { const sheet=sheet_(name),headers=APP.SHEETS[name],data=rows_(name);data.forEach((row,i)=>{if(predicate(row)){const next=updater(Object.assign({},row))||row;sheet.getRange(i+2,1,1,headers.length).setValues([headers.map(h=>next[h]===undefined?"":next[h])]);}}); }
+function decodeCycle_(row) { const copy=Object.assign({},row);copy.roles=parseArray_(copy.roles);copy.dates=parseArray_(copy.dates);return copy; }
+function decodeParticipant_(row) { const copy=Object.assign({},row);copy.roles=parseArray_(copy.roles);copy.unavailable=parseArray_(copy.unavailable);copy.submitted=true;return copy; }
+function decodeAssignment_(row) { const copy=Object.assign({},row);copy.locked=truthy_(copy.locked);return copy; }
+function parseArray_(value) { if(Array.isArray(value))return value;try{return JSON.parse(value||"[]");}catch(e){return [];} }
+function publicChurch_(church) { return { id: church.id, name: church.name, city: church.city }; }
+function withLock_(lock, callback) { lock.waitLock(10000);try{return callback();}finally{lock.releaseLock();} }
+function clean_(value, max) { return String(value || "").replace(/[<>]/g, "").trim().slice(0, max); }
+function truthy_(value) { return value === true || String(value).toLowerCase() === "true" || value === 1; }
+function id_(prefix) { return `${prefix}_${Utilities.getUuid().replace(/-/g, "").slice(0, 16)}`; }
+function token_(bytes) { const raw=Utilities.getUuid()+Utilities.getUuid()+Utilities.getUuid();return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,raw+Date.now())).replace(/=+$/g,"").slice(0,bytes); }
+function hashPassword_(password) { const salt=PropertiesService.getScriptProperties().getProperty("PASSWORD_SALT")||createSalt_();const digest=Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,salt+String(password),Utilities.Charset.UTF_8);return digest.map(b=>(b<0?b+256:b).toString(16).padStart(2,"0")).join(""); }
+function createSalt_() { const salt=token_(32);PropertiesService.getScriptProperties().setProperty("PASSWORD_SALT",salt);return salt; }
+function safeEqual_(a,b) { if(a.length!==b.length)return false;let result=0;for(let i=0;i<a.length;i++)result|=a.charCodeAt(i)^b.charCodeAt(i);return result===0; }
+function ensureSuperAdmin_(name,email,password) { if(!rows_("Admins").some(a=>a.role==="super"))append_("Admins",{id:id_("admin"),role:"super",churchId:"",name,email:String(email).toLowerCase(),passwordHash:hashPassword_(password),active:true,createdAt:new Date().toISOString()}); }
+function json_(value) { return ContentService.createTextOutput(JSON.stringify(value)).setMimeType(ContentService.MimeType.JSON); }
+
+
