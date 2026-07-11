@@ -4,7 +4,7 @@
     Admins: ["id", "role", "churchId", "name", "email", "passwordHash", "active", "createdAt"],
     Churches: ["id", "name", "city", "adminName", "adminEmail", "active", "members", "createdAt"],
     Cycles: ["id", "churchId", "name", "start", "end", "status", "token", "publicToken", "roles", "dates", "createdAt"],
-    Participants: ["id", "cycleId", "churchId", "name", "email", "roles", "unavailable", "submittedAt"],
+    Participants: ["id", "cycleId", "churchId", "name", "email", "roles", "unavailable", "submittedAt", "autoAssign"],
     Assignments: ["id", "cycleId", "date", "role", "participantId", "locked", "updatedAt"],
     Sessions: ["token", "email", "role", "churchId", "name", "expiresAt"]
   }
@@ -19,12 +19,13 @@ function setupDatabase() {
   Object.keys(APP.SHEETS).forEach(name => {
     let sheet = ss.getSheetByName(name);
     if (!sheet) sheet = ss.insertSheet(name);
-    if (sheet.getLastRow() === 0) {
-      sheet.getRange(1, 1, 1, APP.SHEETS[name].length).setValues([APP.SHEETS[name]]);
-      sheet.setFrozenRows(1);
-      sheet.getRange(1, 1, 1, APP.SHEETS[name].length).setFontWeight("bold").setBackground("#173f35").setFontColor("#ffffff");
-      sheet.autoResizeColumns(1, APP.SHEETS[name].length);
-    }
+    const headers = APP.SHEETS[name];
+    const existing = sheet.getLastRow() ? sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0] : [];
+    headers.forEach((header, index) => { if (existing[index] && existing[index] !== header) throw new Error(`Unexpected ${name} column ${index + 1}: expected ${header}.`); });
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#173f35").setFontColor("#ffffff");
+    sheet.autoResizeColumns(1, headers.length);
   });
   PropertiesService.getScriptProperties().setProperty("SPREADSHEET_ID", ss.getId());
   return "Database ready.";
@@ -82,6 +83,7 @@ function doPost(e) {
       createCycle: () => withLock_(lock, () => createCycle_(session, request.payload)),
       deleteCycle: () => withLock_(lock, () => deleteCycle_(session, request.payload)),
       addParticipant: () => withLock_(lock, () => addParticipant_(session, request.payload)),
+      setParticipantAutoAssign: () => withLock_(lock, () => setParticipantAutoAssign_(session, request.payload)),
       saveAssignments: () => withLock_(lock, () => saveAssignments_(session, request.payload)),
       publishRoster: () => withLock_(lock, () => publishRoster_(session, request.payload))
     };
@@ -152,8 +154,9 @@ function submitAvailability_(payload) {
   const unavailable = (p.unavailable || []).filter(date => cycle.dates.includes(date));
   if (!roles.length) throw new Error("The selected roles are not valid for this cycle.");
   const email = String(p.email).trim().toLowerCase();
+  const existing = rows_("Participants").find(row => row.cycleId === cycle.id && String(row.email).toLowerCase() === email);
   deleteWhere_("Participants", row => row.cycleId === cycle.id && String(row.email).toLowerCase() === email);
-  append_("Participants", { id: p.id || id_("p"), cycleId: cycle.id, churchId: cycle.churchId, name: clean_(p.name, 120), email, roles: JSON.stringify(roles), unavailable: JSON.stringify(unavailable), submittedAt: new Date().toISOString() });
+  append_("Participants", { id: p.id || (existing && existing.id) || id_("p"), cycleId: cycle.id, churchId: cycle.churchId, name: clean_(p.name, 120), email, roles: JSON.stringify(roles), unavailable: JSON.stringify(unavailable), submittedAt: new Date().toISOString(), autoAssign: existing && existing.autoAssign !== "" ? truthy_(existing.autoAssign) : true });
   return { message: "Availability received." };
 }
 
@@ -211,11 +214,22 @@ function addParticipant_(session, payload) {
     id: existing ? existing.id : id_("p"), cycleId: cycle.id, churchId: cycle.churchId,
     name: clean_(participant.name, 120), email,
     roles: JSON.stringify(roles), unavailable: JSON.stringify(unavailable),
-    submittedAt: new Date().toISOString()
+    submittedAt: new Date().toISOString(), autoAssign: existing && existing.autoAssign !== "" ? truthy_(existing.autoAssign) : true
   };
   deleteWhere_("Participants", existing => existing.cycleId === cycle.id && String(existing.email).toLowerCase() === email);
   append_("Participants", row);
   return { participant: decodeParticipant_(row) };
+}
+
+function setParticipantAutoAssign_(session, payload) {
+  const cycle = cycleForSession_(session, (payload || {}).cycleId);
+  const participantId = String((payload || {}).participantId || "");
+  const participant = rows_("Participants").find(row => row.id === participantId && row.cycleId === cycle.id);
+  if (!participant) throw new Error("Participant not found for this cycle.");
+  const autoAssign = (payload || {}).autoAssign !== false;
+  updateWhere_("Participants", row => row.id === participantId && row.cycleId === cycle.id, row => Object.assign(row, { autoAssign }));
+  participant.autoAssign = autoAssign;
+  return { participant: decodeParticipant_(participant) };
 }
 
 function saveAssignments_(session, payload) {
@@ -258,7 +272,7 @@ function append_(name, row) { const headers=APP.SHEETS[name];sheet_(name).append
 function deleteWhere_(name, predicate) { const sheet=sheet_(name),data=rows_(name);for(let i=data.length-1;i>=0;i--)if(predicate(data[i]))sheet.deleteRow(i+2); }
 function updateWhere_(name, predicate, updater) { const sheet=sheet_(name),headers=APP.SHEETS[name],data=rows_(name);data.forEach((row,i)=>{if(predicate(row)){const next=updater(Object.assign({},row))||row;sheet.getRange(i+2,1,1,headers.length).setValues([headers.map(h=>next[h]===undefined?"":next[h])]);}}); }
 function decodeCycle_(row) { const copy=Object.assign({},row);copy.roles=parseArray_(copy.roles);copy.dates=parseArray_(copy.dates);return copy; }
-function decodeParticipant_(row) { const copy=Object.assign({},row);copy.roles=parseArray_(copy.roles);copy.unavailable=parseArray_(copy.unavailable);copy.submitted=true;return copy; }
+function decodeParticipant_(row) { const copy=Object.assign({},row);copy.roles=parseArray_(copy.roles);copy.unavailable=parseArray_(copy.unavailable);copy.autoAssign=copy.autoAssign===""||copy.autoAssign===undefined?true:truthy_(copy.autoAssign);copy.submitted=true;return copy; }
 function decodeAssignment_(row) { const copy=Object.assign({},row);copy.locked=truthy_(copy.locked);return copy; }
 function parseArray_(value) { if(Array.isArray(value))return value;try{return JSON.parse(value||"[]");}catch(e){return [];} }
 function publicChurch_(church) { return { id: church.id, name: church.name, city: church.city }; }

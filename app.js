@@ -344,7 +344,8 @@ function rosterDate(date, roles, assignments) {
 
 function rosterParticipant(person, cycle, assignmentCount = 0) {
   const unavailable = person.unavailable.filter(date => cycle.dates.includes(date)).length;
-  return `<div class="roster-participant" data-participant-id="${esc(person.id)}"><span class="avatar">${initials(person.name)}</span><span class="roster-participant-info"><strong>${esc(person.name)}</strong><small>${person.roles.map(esc).join(" · ")}</small><small><span class="participant-load">${assignmentCount} assigned</span> · ${unavailable ? `${unavailable} unavailable ${unavailable === 1 ? "date" : "dates"}` : "Available all dates"}</small></span>${icon("grip-vertical","drag-handle")}</div>`;
+  const manualOnly = person.autoAssign === false;
+  return `<div class="roster-participant ${manualOnly?"manual-only":""}" data-participant-id="${esc(person.id)}"><span class="avatar">${initials(person.name)}</span><span class="roster-participant-info"><strong>${esc(person.name)}</strong><small>${person.roles.map(esc).join(" · ")}</small><small><span class="participant-load">${assignmentCount} assigned</span> · ${unavailable ? `${unavailable} unavailable ${unavailable === 1 ? "date" : "dates"}` : "Available all dates"}${manualOnly?` · <span class="manual-only-label">Manual only</span>`:""}</small></span><span class="roster-participant-controls"><button class="assignment-control participant-auto-toggle ${manualOnly?"excluded":""}" data-toggle-auto-assign="${esc(person.id)}" title="${manualOnly?"Allow Optimize to assign":"Exclude from Optimize"}">${icon(manualOnly?"lock":"lock-open")}</button>${icon("grip-vertical","drag-handle")}</span></div>`;
 }
 
 function placementConflict(person, date, role, assignments, ignoreIds = []) {
@@ -362,7 +363,7 @@ function optimizeRoster(showToast = true) {
   const loads = Object.fromEntries(participants().map(p => [p.id, locked.filter(a=>a.participantId===p.id).length]));
   cycle.dates.forEach(date => cycle.roles.forEach(role => {
     if (result.some(a=>a.date===date&&a.role===role)) return;
-    const candidates = participants().filter(p => p.submitted && p.roles.includes(role) && !p.unavailable.includes(date) && !result.some(a=>a.date===date&&a.participantId===p.id)).sort((a,b)=>(loads[a.id]||0)-(loads[b.id]||0));
+    const candidates = participants().filter(p => p.submitted && p.autoAssign !== false && p.roles.includes(role) && !p.unavailable.includes(date) && !result.some(a=>a.date===date&&a.participantId===p.id)).sort((a,b)=>(loads[a.id]||0)-(loads[b.id]||0));
     const chosen = candidates[0];
     if (chosen) { result.push({ id: `a_${date}_${role.replace(/\W/g,"")}`, cycleId: cycle.id, date, role, participantId: chosen.id, locked: false }); loads[chosen.id] = (loads[chosen.id]||0)+1; }
   }));
@@ -378,6 +379,7 @@ function bindRoster() {
   document.querySelectorAll("[data-remove-assignment]").forEach(btn => btn.addEventListener("click", e => { e.stopPropagation(); const a=store.state.assignments.find(x=>x.id===btn.dataset.removeAssignment);if(!a)return;if(a.locked){toast("Unlock this placement before removing it","circle-alert");return}store.state.assignments=store.state.assignments.filter(x=>x.id!==a.id);store.save();renderRoster();toast("Assignment removed","user-minus") }));
   document.querySelectorAll("[data-block-slot]").forEach(btn => btn.addEventListener("click", e => { e.stopPropagation();const cycle=currentCycle(),assignments=assignmentsFor(cycle);if(assignments.some(a=>a.date===btn.dataset.date&&a.role===btn.dataset.role)){toast("Remove the assignment before blocking this role","circle-alert");return}store.state.assignments.push({id:`blocked_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,cycleId:cycle.id,date:btn.dataset.date,role:btn.dataset.role,participantId:BLOCKED_PARTICIPANT_ID,locked:true});store.save();renderRoster();toast("Role blocked for this date","ban") }));
   document.querySelectorAll("[data-unblock-slot]").forEach(btn => btn.addEventListener("click", e => { e.stopPropagation();store.state.assignments=store.state.assignments.filter(a=>a.id!==btn.dataset.unblockSlot);store.save();renderRoster();toast("Role available again","circle-check") }));
+  document.querySelectorAll("[data-toggle-auto-assign]").forEach(btn => btn.addEventListener("click", async e => { e.stopPropagation();const person=store.state.participants.find(p=>p.id===btn.dataset.toggleAutoAssign);if(!person)return;const autoAssign=person.autoAssign===false;btn.disabled=true;try{const result=await api.call("setParticipantAutoAssign",{cycleId:currentCycle().id,participantId:person.id,autoAssign});person.autoAssign=result.participant?.autoAssign!==false;store.save();renderRoster();toast(person.autoAssign?"Participant available to Optimize":"Participant set to Manual only",person.autoAssign?"lock-open":"lock")}catch(error){btn.disabled=false;toast(error.message,"circle-alert")} }));
   if (!window.Sortable) return;
   const pool = document.querySelector("[data-participant-pool]");
   if (pool) new Sortable(pool, { group: { name: "roster", pull: "clone", put: false }, sort: false, draggable: ".roster-participant", animation: 140, revertOnSpill: true });

@@ -220,7 +220,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .blocked-assignment .lucide { width: 12px; }
 .participant-pool { max-height: 330px; display: grid; gap: 7px; padding: 10px; overflow-y: auto; }
 .participant-pool-empty { margin: 4px; color: var(--muted); font-size: 11px; text-align: center; }
-.roster-participant { display: grid; grid-template-columns: 30px minmax(0,1fr) 14px; gap: 8px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: white; cursor: grab; }
+.roster-participant { display: grid; grid-template-columns: 30px minmax(0,1fr) 22px; gap: 8px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: white; cursor: grab; }
 .roster-participant:hover { border-color: var(--line-strong); box-shadow: 0 3px 10px rgba(32,53,46,.08); }
 .roster-participant:active { cursor: grabbing; }
 .roster-participant .avatar { width: 30px; height: 30px; font-size: 10px; }
@@ -229,6 +229,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .roster-participant-info strong { font-size: 11px; }
 .roster-participant-info small { color: var(--muted); font-size: 9px; }
 .roster-participant-info .participant-load { color: var(--primary); font-weight: 700; }
+.roster-participant.manual-only { background: var(--surface-alt); }
+.roster-participant-info .manual-only-label { color: var(--amber); font-weight: 700; }
+.roster-participant-controls { display: grid; justify-items: center; gap: 3px; }
+.participant-auto-toggle { width: 20px; height: 20px; flex-basis: 20px; color: var(--primary); }
+.participant-auto-toggle.excluded { color: var(--amber); background: var(--amber-soft); }
 .drag-handle { width: 14px; color: var(--muted); }
 .sortable-ghost { opacity: .35; }
 
