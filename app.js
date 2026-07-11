@@ -1,5 +1,5 @@
 /* Set this to the deployed Google Apps Script Web App URL for production. */
-const API_URL = "https://script.google.com/macros/s/AKfycbxdAN0pvjYQIooJCayx8d77CdFDEz3PIU6-r9kOWIutNca5cAhYkqmBmiVFdq9t1IYo/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxWPQXunidRwM6zB7EJi3-SE03IZLoTLnIbO5tAEBSvG6g2CAZcj4DkSol5ecmUDN0N/exec";
 
 const app = document.querySelector("#app");
 const BLOCKED_PARTICIPANT_ID = "__blocked__";
