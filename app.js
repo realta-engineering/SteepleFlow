@@ -358,12 +358,14 @@ function placementConflict(person, date, role, assignments, ignoreIds = []) {
 
 function optimizeRoster(showToast = true) {
   const cycle = currentCycle();
-  const locked = store.state.assignments.filter(a => a.locked && (!a.cycleId || a.cycleId === cycle.id));
-  const result = [...locked];
-  const loads = Object.fromEntries(participants().map(p => [p.id, locked.filter(a=>a.participantId===p.id).length]));
+  const people = participants();
+  const manualOnlyIds = new Set(people.filter(p => p.autoAssign === false).map(p => p.id));
+  const preserved = assignmentsFor(cycle).filter(a => a.locked || manualOnlyIds.has(a.participantId));
+  const result = [...preserved];
+  const loads = Object.fromEntries(people.map(p => [p.id, preserved.filter(a=>a.participantId===p.id).length]));
   cycle.dates.forEach(date => cycle.roles.forEach(role => {
     if (result.some(a=>a.date===date&&a.role===role)) return;
-    const candidates = participants().filter(p => p.submitted && p.autoAssign !== false && p.roles.includes(role) && !p.unavailable.includes(date) && !result.some(a=>a.date===date&&a.participantId===p.id)).sort((a,b)=>(loads[a.id]||0)-(loads[b.id]||0));
+    const candidates = people.filter(p => p.submitted && p.autoAssign !== false && p.roles.includes(role) && !p.unavailable.includes(date) && !result.some(a=>a.date===date&&a.participantId===p.id)).sort((a,b)=>(loads[a.id]||0)-(loads[b.id]||0));
     const chosen = candidates[0];
     if (chosen) { result.push({ id: `a_${date}_${role.replace(/\W/g,"")}`, cycleId: cycle.id, date, role, participantId: chosen.id, locked: false }); loads[chosen.id] = (loads[chosen.id]||0)+1; }
   }));
