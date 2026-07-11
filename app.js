@@ -314,7 +314,8 @@ function renderRoster() {
     const person = store.state.participants.find(p => p.id === a.participantId);
     return !person || !person.roles.includes(a.role) || person.unavailable.includes(a.date) || assignments.some(other => other.id !== a.id && other.date === a.date && other.participantId === a.participantId);
   }).length;
-  const loads = people.map(p => assignments.filter(a => a.participantId === p.id).length);
+  const loadCounts = Object.fromEntries(people.map(p => [p.id, assignments.filter(a => a.participantId === p.id).length]));
+  const loads = Object.values(loadCounts);
   const loadSpread = loads.length ? Math.max(...loads) - Math.min(...loads) : 0;
   const coverage = totalPositions ? Math.round(filledPositions / totalPositions * 100) : 0;
   document.querySelector("#view").innerHTML = `
@@ -322,7 +323,7 @@ function renderRoster() {
     <div class="steps"><div class="step complete">1. Cycle setup</div><div class="step complete">2. Availability</div><div class="step active">3. Assign roles</div><div class="step">4. Publish</div></div>
     <div class="roster-layout">
       <div class="roster-sidebar">
-        <aside class="panel participant-pool-panel"><div class="panel-head"><div><h3>Participants</h3><p>Drag a person into an open role.</p></div><strong>${people.length}</strong></div><div class="participant-pool" data-participant-pool>${people.length ? people.map(p=>rosterParticipant(p,cycle)).join("") : `<p class="participant-pool-empty">No participants yet.</p>`}</div></aside>
+        <aside class="panel participant-pool-panel"><div class="panel-head"><div><h3>Participants</h3><p>Drag a person into an open role.</p></div><strong>${people.length}</strong></div><div class="participant-pool" data-participant-pool>${people.length ? people.map(p=>rosterParticipant(p,cycle,loadCounts[p.id])).join("") : `<p class="participant-pool-empty">No participants yet.</p>`}</div></aside>
         <aside class="panel optimizer-panel"><div class="panel-head"><div><h3>Roster health</h3><p>Balance and availability</p></div></div><div class="panel-body">
           <div class="score-ring" style="--score:${coverage}%"><div class="score-inner"><span><strong>${coverage}</strong><small>Coverage</small></span></div></div>
           <div><div class="metric"><span>Positions filled</span><strong>${filledPositions} / ${totalPositions}</strong></div><div class="metric"><span>Availability conflicts</span><strong class="${conflicts ? "warn" : "good"}">${conflicts}</strong></div><div class="metric"><span>Load spread</span><strong>${loadSpread}</strong></div><div class="metric"><span>Locked placements</span><strong>${assignments.filter(a=>a.locked&&!isBlockedAssignment(a)).length}</strong></div><div class="metric"><span>Blocked roles</span><strong>${blockedPositions}</strong></div></div>
@@ -341,9 +342,9 @@ function rosterDate(date, roles, assignments) {
   }).join("")}</div>`;
 }
 
-function rosterParticipant(person, cycle) {
+function rosterParticipant(person, cycle, assignmentCount = 0) {
   const unavailable = person.unavailable.filter(date => cycle.dates.includes(date)).length;
-  return `<div class="roster-participant" data-participant-id="${esc(person.id)}"><span class="avatar">${initials(person.name)}</span><span class="roster-participant-info"><strong>${esc(person.name)}</strong><small>${person.roles.map(esc).join(" · ")}</small><small>${unavailable ? `${unavailable} unavailable ${unavailable === 1 ? "date" : "dates"}` : "Available all dates"}</small></span>${icon("grip-vertical","drag-handle")}</div>`;
+  return `<div class="roster-participant" data-participant-id="${esc(person.id)}"><span class="avatar">${initials(person.name)}</span><span class="roster-participant-info"><strong>${esc(person.name)}</strong><small>${person.roles.map(esc).join(" · ")}</small><small><span class="participant-load">${assignmentCount} assigned</span> · ${unavailable ? `${unavailable} unavailable ${unavailable === 1 ? "date" : "dates"}` : "Available all dates"}</small></span>${icon("grip-vertical","drag-handle")}</div>`;
 }
 
 function placementConflict(person, date, role, assignments, ignoreIds = []) {

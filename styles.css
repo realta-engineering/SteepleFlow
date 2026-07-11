@@ -228,6 +228,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .roster-participant-info strong, .roster-participant-info small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .roster-participant-info strong { font-size: 11px; }
 .roster-participant-info small { color: var(--muted); font-size: 9px; }
+.roster-participant-info .participant-load { color: var(--primary); font-weight: 700; }
 .drag-handle { width: 14px; color: var(--muted); }
 .sortable-ghost { opacity: .35; }
 
