@@ -319,7 +319,7 @@ function renderRoster() {
   const loadSpread = loads.length ? Math.max(...loads) - Math.min(...loads) : 0;
   const coverage = totalPositions ? Math.round(filledPositions / totalPositions * 100) : 0;
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><h2>${esc(cycle.name)}</h2><p>Assign participants, lock key placements, and optimize the remaining roster.</p></div><div class="page-actions"><button class="btn btn-secondary" data-save>${icon("save")} Save draft</button><button class="btn btn-primary" data-publish>${icon("send")} Publish roster</button></div></div>
+    <div class="page-head"><div><h2>${esc(cycle.name)}</h2><p>Assign participants, lock key placements, and optimize the remaining roster.</p></div><div class="page-actions roster-page-actions"><button class="btn btn-secondary" data-save>${icon("save")} Save draft</button><button class="btn btn-primary" data-publish>${icon("send")} Publish roster</button></div></div>
     <div class="steps"><div class="step complete">1. Cycle setup</div><div class="step complete">2. Availability</div><div class="step active">3. Assign roles</div><div class="step">4. Publish</div></div>
     <div class="roster-layout">
       <div class="roster-sidebar">
@@ -330,7 +330,7 @@ function renderRoster() {
           <div><button class="btn btn-primary" style="width:100%" data-optimize>${icon("wand-sparkles")} Optimize</button></div>
         </div></aside>
       </div>
-      <section class="panel"><div class="panel-head"><div><h3>Service assignments</h3><p>Drag participants between matching roles. Click the lock to preserve a placement.</p></div><span class="status ${esc(cycle.status)}">${esc(cycle.status)}</span></div><div class="table-wrap"><div class="roster-board" style="--role-count:${cycle.roles.length}">${cycle.dates.map(d=>rosterDate(d, cycle.roles, assignments)).join("")}</div></div></section>
+      <section class="panel roster-board-panel"><div class="panel-head"><div><h3>Service assignments</h3><p>Drag participants or tap an empty role to assign someone.</p></div><span class="status ${esc(cycle.status)}">${esc(cycle.status)}</span></div><div class="table-wrap"><div class="roster-board" style="--role-count:${cycle.roles.length}">${cycle.dates.map(d=>rosterDate(d, cycle.roles, assignments)).join("")}</div></div></section>
     </div>`;
   bindRoster(); refreshIcons();
 }
@@ -338,7 +338,7 @@ function renderRoster() {
 function rosterDate(date, roles, assignments) {
   return `<div class="roster-date"><div class="date-cell"><strong>${dateLabel(date,{weekday:"short",day:"numeric"})}</strong><small>${dateLabel(date,{month:"long",year:"numeric"})}</small></div>${roles.map(role => {
     const a=assignments.find(x=>x.date===date&&x.role===role),blocked=isBlockedAssignment(a),p=a&&!blocked&&store.state.participants.find(x=>x.id===a.participantId);
-    return `<div class="assignment-cell dropzone ${blocked?"blocked":""}" data-date="${date}" data-role="${esc(role)}"><div class="assignment-label"><span>${esc(role)}</span><span class="assignment-label-actions"><span>${blocked?"Blocked":p?"1 / 1":"0 / 1"}</span>${!a?`<button class="assignment-control block-slot" data-block-slot data-date="${date}" data-role="${esc(role)}" title="Block role for this date">${icon("ban")}</button>`:""}</span></div>${blocked?`<div class="blocked-assignment"><span>${icon("ban")} Not required</span><button class="assignment-control unblock-slot" data-unblock-slot="${a.id}" title="Make this role available">${icon("x")}</button></div>`:p?`<div class="assignment" data-id="${a.id}"><span class="avatar">${initials(p.name)}</span><strong>${esc(p.name)}</strong><span class="assignment-actions"><button class="assignment-control lock" data-lock="${a.id}" title="${a.locked ? "Unlock placement" : "Lock placement"}">${icon(a.locked ? "lock-keyhole" : "lock-keyhole-open")}</button><button class="assignment-control remove-assignment" data-remove-assignment="${a.id}" title="Remove assignment">${icon("trash-2")}</button></span></div>`:""}</div>`;
+    return `<div class="assignment-cell dropzone ${blocked?"blocked":""} ${!a?"open-slot":""}" data-date="${date}" data-role="${esc(role)}" ${!a?'data-open-slot role="button" tabindex="0"':""}><div class="assignment-label"><span>${esc(role)}</span><span class="assignment-label-actions"><span>${blocked?"Blocked":p?"1 / 1":"0 / 1"}</span>${!a?`<button class="assignment-control block-slot" data-block-slot data-date="${date}" data-role="${esc(role)}" title="Block role for this date">${icon("ban")}</button>`:""}</span></div>${blocked?`<div class="blocked-assignment"><span>${icon("ban")} Not required</span><button class="assignment-control unblock-slot" data-unblock-slot="${a.id}" title="Make this role available">${icon("x")}</button></div>`:p?`<div class="assignment" data-id="${a.id}"><span class="avatar">${initials(p.name)}</span><strong>${esc(p.name)}</strong><span class="assignment-actions"><button class="assignment-control lock" data-lock="${a.id}" title="${a.locked ? "Unlock placement" : "Lock placement"}">${icon(a.locked ? "lock-keyhole" : "lock-keyhole-open")}</button><button class="assignment-control remove-assignment" data-remove-assignment="${a.id}" title="Remove assignment">${icon("trash-2")}</button></span></div>`:`<div class="empty-assignment-prompt">${icon("user-plus")} <span>Tap to assign</span></div>`}</div>`;
   }).join("")}</div>`;
 }
 
@@ -354,6 +354,24 @@ function placementConflict(person, date, role, assignments, ignoreIds = []) {
   if (person.unavailable.includes(date)) return `${person.name} is unavailable on ${fullDate(date)}.`;
   if (assignments.some(a => !ignoreIds.includes(a.id) && a.date === date && a.participantId === person.id)) return `${person.name} already has an assignment on ${fullDate(date)}.`;
   return "";
+}
+
+function assignParticipantToSlot(participantId, date, role) {
+  const cycle=currentCycle(),assignments=assignmentsFor(cycle),person=store.state.participants.find(p=>p.id===participantId);
+  const conflict=placementConflict(person,date,role,assignments),occupied=assignments.find(a=>a.date===date&&a.role===role);
+  if(conflict||occupied)return {ok:false,error:conflict||(isBlockedAssignment(occupied)?"That role is blocked for this date.":"That role already has an assignment.")};
+  store.state.assignments.push({id:`a_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,cycleId:cycle.id,date,role,participantId,locked:false});
+  store.save();
+  return {ok:true,person};
+}
+
+function showAssignmentPicker(date, role) {
+  const cycle=currentCycle(),assignments=assignmentsFor(cycle),people=participants();
+  const loadCounts=Object.fromEntries(people.map(p=>[p.id,assignments.filter(a=>a.participantId===p.id).length]));
+  const eligible=people.filter(p=>!placementConflict(p,date,role,assignments)).sort((a,b)=>(loadCounts[a.id]||0)-(loadCounts[b.id]||0)||a.name.localeCompare(b.name));
+  showModal(`<div class="modal-head"><div><h2>Assign ${esc(role)}</h2><p>${fullDate(date)}</p></div><button class="icon-btn" data-close title="Close">${icon("x")}</button></div><div class="modal-body assignment-picker"><p class="assignment-picker-help">Choose an eligible participant. Manual-only participants remain available for manual assignment.</p><div class="participant-choices">${eligible.length?eligible.map(p=>`<button class="participant-choice" type="button" data-choose-participant="${esc(p.id)}"><span class="avatar">${initials(p.name)}</span><span><strong>${esc(p.name)}</strong><small>${p.roles.map(esc).join(" · ")}${p.autoAssign===false?" · Manual only":""}</small></span><span class="participant-choice-load">${loadCounts[p.id]||0} assigned</span></button>`).join(""):`<div class="empty"><span class="empty-icon">${icon("user-x")}</span><h3>No eligible participants</h3><p>Everyone is unavailable, already assigned that date, or does not serve this role.</p></div>`}</div></div>`,true,"assignment-picker");
+  document.querySelectorAll("[data-choose-participant]").forEach(btn=>btn.addEventListener("click",()=>{const result=assignParticipantToSlot(btn.dataset.chooseParticipant,date,role);if(!result.ok){toast(result.error,"circle-alert");return}closeModal();renderRoster();toast(`${result.person.name} assigned`,"user-check")}));
+  refreshIcons();
 }
 
 function optimizeRoster(showToast = true) {
@@ -382,6 +400,7 @@ function bindRoster() {
   document.querySelectorAll("[data-block-slot]").forEach(btn => btn.addEventListener("click", e => { e.stopPropagation();const cycle=currentCycle(),assignments=assignmentsFor(cycle);if(assignments.some(a=>a.date===btn.dataset.date&&a.role===btn.dataset.role)){toast("Remove the assignment before blocking this role","circle-alert");return}store.state.assignments.push({id:`blocked_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,cycleId:cycle.id,date:btn.dataset.date,role:btn.dataset.role,participantId:BLOCKED_PARTICIPANT_ID,locked:true});store.save();renderRoster();toast("Role blocked for this date","ban") }));
   document.querySelectorAll("[data-unblock-slot]").forEach(btn => btn.addEventListener("click", e => { e.stopPropagation();store.state.assignments=store.state.assignments.filter(a=>a.id!==btn.dataset.unblockSlot);store.save();renderRoster();toast("Role available again","circle-check") }));
   document.querySelectorAll("[data-toggle-auto-assign]").forEach(btn => btn.addEventListener("click", async e => { e.stopPropagation();const person=store.state.participants.find(p=>p.id===btn.dataset.toggleAutoAssign);if(!person)return;const autoAssign=person.autoAssign===false;btn.disabled=true;try{const result=await api.call("setParticipantAutoAssign",{cycleId:currentCycle().id,participantId:person.id,autoAssign});person.autoAssign=result.participant?.autoAssign!==false;store.save();renderRoster();toast(person.autoAssign?"Participant available to Optimize":"Participant set to Manual only",person.autoAssign?"lock-open":"lock")}catch(error){btn.disabled=false;toast(error.message,"circle-alert")} }));
+  document.querySelectorAll("[data-open-slot]").forEach(cell=>{const open=()=>showAssignmentPicker(cell.dataset.date,cell.dataset.role);cell.addEventListener("click",e=>{if(!e.target.closest("button"))open()});cell.addEventListener("keydown",e=>{if(e.target.closest("button"))return;if(e.key==="Enter"||e.key===" "){e.preventDefault();open()}})});
   if (!window.Sortable) return;
   const pool = document.querySelector("[data-participant-pool]");
   if (pool) new Sortable(pool, { group: { name: "roster", pull: "clone", put: false }, sort: false, draggable: ".roster-participant", animation: 140, revertOnSpill: true });
@@ -390,19 +409,9 @@ function bindRoster() {
     onAdd(evt) {
       const participantId = evt.item.dataset.participantId;
       if (!participantId) return;
-      const cycle = currentCycle();
-      const assignments = assignmentsFor(cycle);
       const target = evt.to;
-      const person = store.state.participants.find(p => p.id === participantId);
-      const conflict = placementConflict(person, target.dataset.date, target.dataset.role, assignments);
-      const occupied = assignments.find(a => a.date === target.dataset.date && a.role === target.dataset.role);
-      if (conflict || occupied) {
-        renderRoster();
-        toast(conflict || (isBlockedAssignment(occupied) ? "That role is blocked for this date." : "That role already has an assignment."), "circle-alert");
-        return;
-      }
-      store.state.assignments.push({ id: `a_${Date.now()}_${Math.random().toString(36).slice(2,8)}`, cycleId: cycle.id, date: target.dataset.date, role: target.dataset.role, participantId, locked: false });
-      store.save(); renderRoster(); toast(`${person.name} assigned`, "user-check");
+      const result=assignParticipantToSlot(participantId,target.dataset.date,target.dataset.role);
+      renderRoster();toast(result.ok?`${result.person.name} assigned`:result.error,result.ok?"user-check":"circle-alert");
     },
     onEnd(evt) {
       const id = evt.item.dataset.id;
@@ -552,7 +561,7 @@ async function renderPublished(token, remote = null) {
 
 function renderPublicLoading(){app.innerHTML=`<div class="public-shell"><main class="public-content"><section class="public-card confirmation"><span class="confirmation-icon">${icon("loader-circle")}</span><h2>Loading schedule</h2><p>Checking this secure link...</p></section></main></div>`;refreshIcons()}
 function renderPublicError(message){app.innerHTML=`<div class="public-shell"><main class="public-content"><section class="public-card confirmation"><span class="confirmation-icon" style="background:var(--danger)">${icon("link-2-off")}</span><h1>Link unavailable</h1><p>${esc(message)}</p></section></main></div>`;refreshIcons()}
-function showModal(content, wrap=true){const el=document.createElement("div");el.className="modal-backdrop";el.id="modal";el.innerHTML=wrap?`<section class="modal">${content}</section>`:`<section class="modal">${content}</section>`;document.body.appendChild(el);el.addEventListener("click",e=>{if(e.target===el||e.target.closest("[data-close]"))closeModal()});refreshIcons()}
+function showModal(content, wrap=true, variant=""){const el=document.createElement("div"),suffix=variant?`-${variant}`:"";el.className=`modal-backdrop${suffix?` modal-backdrop${suffix}`:""}`;el.id="modal";el.innerHTML=wrap?`<section class="modal${suffix?` modal${suffix}`:""}">${content}</section>`:`<section class="modal${suffix?` modal${suffix}`:""}">${content}</section>`;document.body.appendChild(el);el.addEventListener("click",e=>{if(e.target===el||e.target.closest("[data-close]"))closeModal()});refreshIcons()}
 function closeModal(){document.querySelector("#modal")?.remove()}
 function bindRoutes(root=document){root.querySelectorAll("[data-route]").forEach(el=>el.addEventListener("click",()=>location.hash=el.dataset.route))}
 async function copyLink(path){const url=`${location.href.split("#")[0]}#${path}`;try{await navigator.clipboard.writeText(url);toast("Link copied to clipboard","copy")}catch{prompt("Copy this link",url)}}
