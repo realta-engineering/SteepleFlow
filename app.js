@@ -335,7 +335,7 @@ function renderRoster() {
   const loadSpread = loads.length ? Math.max(...loads) - Math.min(...loads) : 0;
   const coverage = totalPositions ? Math.round(filledPositions / totalPositions * 100) : 0;
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><h2>${esc(cycle.name)}</h2><p>Assign participants, lock key placements, and optimize the remaining roster.</p></div><div class="page-actions roster-page-actions"><button class="btn btn-secondary" data-save>${icon("save")} Save draft</button><button class="btn btn-primary" data-publish>${icon("send")} Publish roster</button></div></div>
+    <div class="page-head"><div><h2>${esc(cycle.name)}</h2><p>Assign participants, lock key placements, and optimize the remaining roster.</p></div><div class="page-actions roster-page-actions"><button class="btn btn-secondary" data-clear-roster>${icon("eraser")} Clear roster</button><button class="btn btn-primary" data-publish>${icon("send")} ${cycle.status==="published"?"Update published roster":"Publish roster"}</button></div></div>
     <div class="steps"><div class="step complete">1. Cycle setup</div><div class="step complete">2. Availability</div><div class="step active">3. Assign roles</div><div class="step">4. Publish</div></div>
     <div class="roster-layout">
       <div class="roster-sidebar">
@@ -465,6 +465,14 @@ function showGeneticPreview(result) {
   refreshIcons();
 }
 
+function showClearRosterModal() {
+  const cycle=currentCycle();
+  const placementCount=assignmentsFor(cycle).filter(a=>!isBlockedAssignment(a)).length;
+  showModal(`<div class="modal-head"><div><h2>Clear roster?</h2><p>This removes every participant placement from ${esc(cycle.name)}.</p></div><button class="icon-btn" data-close title="Close">${icon("x")}</button></div><div class="modal-body"><p>${placementCount ? `${placementCount} ${placementCount===1?"assignment":"assignments"} will be removed, including locked placements.` : "There are no participant assignments to remove."} Blocked roles will remain unchanged.</p></div><div class="modal-foot"><button class="btn btn-secondary" type="button" data-close>Cancel</button><button class="btn btn-danger" type="button" data-confirm-clear-roster ${placementCount?"":"disabled"}>${icon("eraser")} Clear roster</button></div>`);
+  document.querySelector("[data-confirm-clear-roster]")?.addEventListener("click",()=>{cancelGeneticOptimization(false);store.state.assignments=store.state.assignments.filter(a=>(a.cycleId&&a.cycleId!==cycle.id)||isBlockedAssignment(a));store.save();closeModal();renderRoster();toast("Roster cleared","eraser")});
+  refreshIcons();
+}
+
 function bindRoster() {
   const setFrozenRoles=roles=>{cancelGeneticOptimization(false);const cycle=currentCycle();if(!store.state.optimizeRoleLocks)store.state.optimizeRoleLocks={};if(roles.length)store.state.optimizeRoleLocks[cycle.id]=roles;else delete store.state.optimizeRoleLocks[cycle.id];store.save();renderRoster()};
   document.querySelectorAll("[data-toggle-role-freeze]").forEach(btn=>btn.addEventListener("click",()=>{const frozen=optimizeRoleLocksFor(currentCycle()),role=btn.dataset.toggleRoleFreeze;if(frozen.has(role))frozen.delete(role);else frozen.add(role);setFrozenRoles([...frozen])}));
@@ -473,7 +481,7 @@ function bindRoster() {
   document.querySelector("[data-optimize]").addEventListener("click", () => optimizeRoster(true));
   document.querySelector("[data-surprise-optimize]").addEventListener("click",()=>startGeneticOptimization());
   document.querySelector("[data-cancel-genetic]").addEventListener("click",()=>cancelGeneticOptimization(true));
-  document.querySelector("[data-save]").addEventListener("click", async () => { await api.call("saveAssignments", { cycleId: currentCycle().id, assignments: store.state.assignments.filter(a => !a.cycleId || a.cycleId === currentCycle().id) }); toast("Draft roster saved", "save"); });
+  document.querySelector("[data-clear-roster]").addEventListener("click",showClearRosterModal);
   document.querySelector("[data-publish]").addEventListener("click", publishRoster);
   document.querySelectorAll("[data-lock]").forEach(btn => btn.addEventListener("click", e => { e.stopPropagation(); const a=store.state.assignments.find(x=>x.id===btn.dataset.lock); a.locked=!a.locked; store.save(); renderRoster(); toast(a.locked ? "Placement locked" : "Placement unlocked", a.locked ? "lock" : "lock-open"); }));
   document.querySelectorAll("[data-remove-assignment]").forEach(btn => btn.addEventListener("click", e => { e.stopPropagation(); const a=store.state.assignments.find(x=>x.id===btn.dataset.removeAssignment);if(!a)return;if(a.locked){toast("Unlock this placement before removing it","circle-alert");return}store.state.assignments=store.state.assignments.filter(x=>x.id!==a.id);store.save();renderRoster();toast("Assignment removed","user-minus") }));
@@ -517,9 +525,12 @@ function bindRoster() {
 }
 
 async function publishRoster() {
-  const cycle=currentCycle(); cycle.status="published"; store.save();
-  await api.call("publishRoster", { cycleId: cycle.id, assignments: store.state.assignments.filter(a => !a.cycleId || a.cycleId === cycle.id) });
-  showModal(`<div class="confirmation"><span class="confirmation-icon">${icon("check")}</span><h2>Roster published</h2><p>Your participants can now view the finalized schedule.</p><div class="page-actions" style="justify-content:center"><button class="btn btn-secondary" data-copy-public>${icon("link")} Copy public link</button><a class="btn btn-primary" href="#published/${cycle.publicToken}">${icon("eye")} View roster</a></div></div>`, false);
+  const cycle=currentCycle(),wasPublished=cycle.status==="published";
+  let result;
+  try { result=await api.call("publishRoster", { cycleId: cycle.id, assignments: store.state.assignments.filter(a => !a.cycleId || a.cycleId === cycle.id) }); }
+  catch(error){toast(error.message,"circle-alert");return}
+  cycle.status="published";cycle.publicToken=result.publicToken||cycle.publicToken;store.save();
+  showModal(`<div class="confirmation"><span class="confirmation-icon">${icon("check")}</span><h2>${wasPublished?"Published roster updated":"Roster published"}</h2><p>${wasPublished?"The same public link now shows the updated schedule.":"Your participants can now view the finalized schedule."}</p><div class="page-actions" style="justify-content:center"><button class="btn btn-secondary" data-copy-public>${icon("link")} Copy public link</button><a class="btn btn-primary" href="#published/${cycle.publicToken}">${icon("eye")} View roster</a></div></div>`, false);
   document.querySelector("[data-copy-public]").addEventListener("click",()=>copyLink(`published/${cycle.publicToken}`)); refreshIcons();
 }
 
