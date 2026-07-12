@@ -3,6 +3,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycbxWPQXunidRwM6zB7EJi3-S
 
 const app = document.querySelector("#app");
 const BLOCKED_PARTICIPANT_ID = "__blocked__";
+let geneticOptimizerWorker = null;
 
 const STORAGE_KEY = "steepleflow_state_v2";
 const emptyState = {
@@ -332,6 +333,7 @@ function renderRoster() {
           <div><div class="metric"><span>Positions filled</span><strong>${filledPositions} / ${totalPositions}</strong></div><div class="metric"><span>Availability conflicts</span><strong class="${conflicts ? "warn" : "good"}">${conflicts}</strong></div><div class="metric"><span>Load spread</span><strong>${loadSpread}</strong></div><div class="metric"><span>Locked placements</span><strong>${assignments.filter(a=>a.locked&&!isBlockedAssignment(a)).length}</strong></div><div class="metric"><span>Blocked roles</span><strong>${blockedPositions}</strong></div></div>
           <div class="optimize-role-controls"><div class="optimize-role-head"><strong>Optimize roles</strong><span><button type="button" data-freeze-all-roles>Freeze all</button><button type="button" data-unfreeze-all-roles>Unfreeze all</button></span></div><p>Frozen roles keep their current assignments and are skipped by Optimize.</p><div class="role-freeze-list">${cycle.roles.map(role=>`<button type="button" class="role-freeze ${frozenRoles.has(role)?"frozen":""}" data-toggle-role-freeze="${esc(role)}">${icon(frozenRoles.has(role)?"lock":"lock-open")} <span>${esc(role)}</span></button>`).join("")}</div></div>
           <div><button class="btn btn-primary" style="width:100%" data-optimize>${icon("wand-sparkles")} Optimize</button></div>
+          <div class="surprise-optimizer"><div class="surprise-settings"><label for="genetic-attempts">Attempts</label><input id="genetic-attempts" data-genetic-attempts type="number" min="10" max="5000" step="10" value="500"></div><button class="btn btn-secondary" type="button" data-surprise-optimize>${icon("dices")} Surprise Me</button><div class="genetic-progress" data-genetic-progress hidden><progress data-genetic-progress-bar max="100" value="0"></progress><div><span data-genetic-progress-text>Preparing population…</span><button type="button" data-cancel-genetic>Cancel</button></div><small data-genetic-best>Searching for a better roster.</small></div></div>
         </div></aside>
       </div>
       <section class="panel roster-board-panel"><div class="panel-head"><div><h3>Service assignments</h3><p>Drag participants or tap an empty role to assign someone.</p></div><span class="status ${esc(cycle.status)}">${esc(cycle.status)}</span></div><div class="table-wrap"><div class="roster-board" style="--role-count:${cycle.roles.length}">${cycle.dates.map(d=>rosterDate(d, cycle.roles, assignments)).join("")}</div></div></section>
@@ -397,12 +399,67 @@ function optimizeRoster(showToast = true) {
   if (showToast) { renderRoster(); toast("Roster optimization complete", "wand-sparkles"); }
 }
 
+function setGeneticOptimizerRunning(running) {
+  const surprise=document.querySelector("[data-surprise-optimize]"),attempts=document.querySelector("[data-genetic-attempts]"),optimize=document.querySelector("[data-optimize]"),progress=document.querySelector("[data-genetic-progress]");
+  if(surprise)surprise.disabled=running;
+  if(attempts)attempts.disabled=running;
+  if(optimize)optimize.disabled=running;
+  if(progress)progress.hidden=!running;
+}
+
+function cancelGeneticOptimization(showMessage=true) {
+  if(!geneticOptimizerWorker)return;
+  geneticOptimizerWorker.terminate();geneticOptimizerWorker=null;setGeneticOptimizerRunning(false);
+  if(showMessage)toast("Surprise Me cancelled","circle-x");
+}
+
+function startGeneticOptimization(attemptOverride=null) {
+  if(typeof Worker==="undefined"){toast("This browser does not support background optimization.","circle-alert");return}
+  cancelGeneticOptimization(false);
+  const cycle=currentCycle(),people=participants(),assignments=assignmentsFor(cycle),input=document.querySelector("[data-genetic-attempts]");
+  const generations=Math.min(Math.max(Number(attemptOverride??input?.value)||500,10),5000);
+  if(input)input.value=generations;
+  setGeneticOptimizerRunning(true);
+  const worker=new Worker("optimizer-worker.js");geneticOptimizerWorker=worker;
+  worker.onmessage=event=>{
+    const message=event.data||{};
+    if(message.type==="progress"){
+      const bar=document.querySelector("[data-genetic-progress-bar]"),text=document.querySelector("[data-genetic-progress-text]"),best=document.querySelector("[data-genetic-best]");
+      if(bar)bar.value=Math.round(message.generation/message.generations*100);
+      if(text)text.textContent=`Generation ${message.generation} / ${message.generations}`;
+      if(best)best.textContent=`Best: ${message.metrics.coverage}% coverage · load spread ${message.metrics.loadSpread}`;
+      return;
+    }
+    if(message.type==="error"){
+      worker.terminate();if(geneticOptimizerWorker===worker)geneticOptimizerWorker=null;setGeneticOptimizerRunning(false);toast(message.error,"circle-alert");return;
+    }
+    if(message.type==="complete"){
+      worker.terminate();if(geneticOptimizerWorker===worker)geneticOptimizerWorker=null;setGeneticOptimizerRunning(false);
+      if(currentCycle()?.id!==cycle.id){toast("The active cycle changed before optimization finished.","circle-alert");return}
+      const proposed=message.assignments.map((item,index)=>{const existing=assignments.find(a=>a.date===item.date&&a.role===item.role&&a.participantId===item.participantId);return {id:item.id||existing?.id||`ga_${Date.now()}_${index}`,cycleId:cycle.id,date:item.date,role:item.role,participantId:item.participantId,locked:!!item.locked}});
+      showGeneticPreview({proposed,metrics:message.metrics,currentMetrics:message.currentMetrics,generations,cycleId:cycle.id});
+    }
+  };
+  worker.onerror=()=>{worker.terminate();if(geneticOptimizerWorker===worker)geneticOptimizerWorker=null;setGeneticOptimizerRunning(false);toast("Surprise Me could not start.","circle-alert")};
+  worker.postMessage({type:"optimize",payload:{cycle:{id:cycle.id,dates:cycle.dates,roles:cycle.roles},participants:people.map(p=>({id:p.id,name:p.name,roles:p.roles,unavailable:p.unavailable,submitted:p.submitted,autoAssign:p.autoAssign})),assignments:assignments.map(a=>({id:a.id,cycleId:a.cycleId,date:a.date,role:a.role,participantId:a.participantId,locked:a.locked})),frozenRoles:[...optimizeRoleLocksFor(cycle)],generations,populationSize:40}});
+}
+
+function showGeneticPreview(result) {
+  const current=result.currentMetrics,next=result.metrics;
+  showModal(`<div class="modal-head"><div><h2>Surprise Me result</h2><p>${result.generations} generations evaluated</p></div><button class="icon-btn" data-close title="Close">${icon("x")}</button></div><div class="modal-body"><div class="genetic-comparison"><div></div><strong>Current</strong><strong>Proposed</strong><span>Coverage</span><b>${current.coverage}%</b><b>${next.coverage}%</b><span>Load spread</span><b>${current.loadSpread}</b><b>${next.loadSpread}</b><span>Consecutive weeks</span><b>${current.consecutive}</b><b>${next.consecutive}</b><span>Repeated roles</span><b>${current.roleRepeats}</b><b>${next.roleRepeats}</b><span>Changed placements</span><b>—</b><b>${next.changes}</b></div></div><div class="modal-foot"><button class="btn btn-secondary" type="button" data-try-genetic>${icon("refresh-cw")} Try again</button><div class="page-actions"><button class="btn btn-secondary" type="button" data-close>Keep current</button><button class="btn btn-primary" type="button" data-apply-genetic>${icon("check")} Apply result</button></div></div>`,true,"genetic-preview");
+  document.querySelector("[data-apply-genetic]").addEventListener("click",()=>{if(currentCycle()?.id!==result.cycleId){toast("The active cycle changed.","circle-alert");return}store.state.assignments=store.state.assignments.filter(a=>a.cycleId&&a.cycleId!==result.cycleId).concat(result.proposed);store.save();closeModal();renderRoster();toast("Surprise Me roster applied","dices")});
+  document.querySelector("[data-try-genetic]").addEventListener("click",()=>{closeModal();startGeneticOptimization(result.generations)});
+  refreshIcons();
+}
+
 function bindRoster() {
-  const setFrozenRoles=roles=>{const cycle=currentCycle();if(!store.state.optimizeRoleLocks)store.state.optimizeRoleLocks={};if(roles.length)store.state.optimizeRoleLocks[cycle.id]=roles;else delete store.state.optimizeRoleLocks[cycle.id];store.save();renderRoster()};
+  const setFrozenRoles=roles=>{cancelGeneticOptimization(false);const cycle=currentCycle();if(!store.state.optimizeRoleLocks)store.state.optimizeRoleLocks={};if(roles.length)store.state.optimizeRoleLocks[cycle.id]=roles;else delete store.state.optimizeRoleLocks[cycle.id];store.save();renderRoster()};
   document.querySelectorAll("[data-toggle-role-freeze]").forEach(btn=>btn.addEventListener("click",()=>{const frozen=optimizeRoleLocksFor(currentCycle()),role=btn.dataset.toggleRoleFreeze;if(frozen.has(role))frozen.delete(role);else frozen.add(role);setFrozenRoles([...frozen])}));
   document.querySelector("[data-freeze-all-roles]").addEventListener("click",()=>setFrozenRoles([...currentCycle().roles]));
   document.querySelector("[data-unfreeze-all-roles]").addEventListener("click",()=>setFrozenRoles([]));
   document.querySelector("[data-optimize]").addEventListener("click", () => optimizeRoster(true));
+  document.querySelector("[data-surprise-optimize]").addEventListener("click",()=>startGeneticOptimization());
+  document.querySelector("[data-cancel-genetic]").addEventListener("click",()=>cancelGeneticOptimization(true));
   document.querySelector("[data-save]").addEventListener("click", async () => { await api.call("saveAssignments", { cycleId: currentCycle().id, assignments: store.state.assignments.filter(a => !a.cycleId || a.cycleId === currentCycle().id) }); toast("Draft roster saved", "save"); });
   document.querySelector("[data-publish]").addEventListener("click", publishRoster);
   document.querySelectorAll("[data-lock]").forEach(btn => btn.addEventListener("click", e => { e.stopPropagation(); const a=store.state.assignments.find(x=>x.id===btn.dataset.lock); a.locked=!a.locked; store.save(); renderRoster(); toast(a.locked ? "Placement locked" : "Placement unlocked", a.locked ? "lock" : "lock-open"); }));

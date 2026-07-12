@@ -200,6 +200,21 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .role-freeze span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .role-freeze .lucide { width: 12px; flex: 0 0 12px; }
 .role-freeze.frozen { color: var(--amber); border-color: #ead3aa; background: var(--amber-soft); }
+.surprise-optimizer { display: grid; gap: 7px; padding-top: 10px; border-top: 1px solid var(--line); }
+.surprise-settings { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 10px; font-weight: 600; }
+.surprise-settings input { width: 76px; min-height: 30px; padding: 4px 7px; border: 1px solid var(--line-strong); border-radius: 5px; }
+.genetic-progress { display: grid; gap: 5px; }
+.genetic-progress[hidden] { display: none; }
+.genetic-progress progress { width: 100%; height: 8px; accent-color: var(--primary); }
+.genetic-progress > div { display: flex; justify-content: space-between; gap: 6px; color: var(--muted); font-size: 9px; }
+.genetic-progress button { padding: 0; color: var(--danger); border: 0; background: transparent; font-size: 9px; font-weight: 700; }
+.genetic-progress small { color: var(--muted); font-size: 8px; }
+.genetic-comparison { display: grid; grid-template-columns: minmax(120px,1fr) repeat(2,minmax(80px,.55fr)); border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.genetic-comparison > * { margin: 0; padding: 9px 10px; border-bottom: 1px solid var(--line); font-size: 11px; }
+.genetic-comparison > :nth-child(3n+2), .genetic-comparison > :nth-child(3n+3) { border-left: 1px solid var(--line); text-align: center; }
+.genetic-comparison > :nth-last-child(-n+3) { border-bottom: 0; }
+.genetic-comparison > strong { color: var(--muted); background: var(--surface-alt); font-size: 9px; text-transform: uppercase; }
+.genetic-comparison b { font-weight: 700; }
 .segmented { display: grid; grid-template-columns: repeat(2,1fr); padding: 3px; border-radius: 6px; background: var(--surface-alt); }
 .segmented button { padding: 6px; border: 0; border-radius: 4px; color: var(--muted); background: transparent; font-size: 10px; font-weight: 600; }
 .segmented button.active { color: var(--ink); background: white; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
@@ -345,6 +360,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
   .roster-participant { grid-template-columns: 34px minmax(0,1fr) 34px; min-height: 58px; }
   .role-freeze { min-height: 36px; font-size: 10px; }
   .optimize-role-head button { min-height: 32px; padding: 5px 7px; font-size: 9px; }
+  .surprise-settings input { min-height: 38px; }
   .published-roles { grid-template-columns: repeat(2,1fr); }
 }
 
@@ -395,6 +411,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
   .modal-backdrop-assignment-picker { align-items: end; padding: 0; }
   .modal-assignment-picker { width: 100%; max-height: 85vh; border-radius: 14px 14px 0 0; }
   .participant-choice { min-height: 64px; }
+  .modal-genetic-preview .modal-foot { align-items: stretch; flex-direction: column; }
+  .modal-genetic-preview .modal-foot > .btn, .modal-genetic-preview .modal-foot .page-actions { width: 100%; }
+  .genetic-comparison { grid-template-columns: minmax(105px,1fr) repeat(2,minmax(68px,.55fr)); }
+  .genetic-comparison > * { padding: 8px 6px; font-size: 10px; }
 }
 
 @media (max-width: 430px) {
