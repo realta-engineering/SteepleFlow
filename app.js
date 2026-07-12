@@ -27,8 +27,16 @@ function loadState() {
   try {
     localStorage.removeItem("steepleflow_state");
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    return saved && Array.isArray(saved.churches) ? Object.assign(structuredClone(emptyState), saved) : structuredClone(emptyState);
+    if (!saved || !Array.isArray(saved.churches)) return structuredClone(emptyState);
+    const state = Object.assign(structuredClone(emptyState), saved);
+    state.assignments = (state.assignments || []).map(normalizeAssignment);
+    return state;
   } catch { return structuredClone(emptyState); }
+}
+
+function normalizeAssignment(assignment) {
+  const date = String(assignment?.date || "");
+  return Object.assign({}, assignment, { date: /^\d{4}-\d{2}-\d{2}/.test(date) ? date.slice(0, 10) : date });
 }
 
 const api = {
@@ -117,7 +125,7 @@ function renderLogin() {
         store.state.churches = result.data.churches || [];
         store.state.cycles = result.data.cycles || [];
         store.state.participants = result.data.participants || [];
-        store.state.assignments = result.data.assignments || [];
+        store.state.assignments = (result.data.assignments || []).map(normalizeAssignment);
       }
       store.state.activeCycleId = null;
       store.state.session = result.session;
@@ -321,7 +329,8 @@ function renderRoster() {
     const person = store.state.participants.find(p => p.id === a.participantId);
     return !person || !person.roles.includes(a.role) || person.unavailable.includes(a.date) || assignments.some(other => other.id !== a.id && other.date === a.date && other.participantId === a.participantId);
   }).length;
-  const loadCounts = Object.fromEntries(people.map(p => [p.id, assignments.filter(a => a.participantId === p.id).length]));
+  const visibleAssignments = assignments.filter(a => cycle.dates.includes(a.date) && cycle.roles.includes(a.role));
+  const loadCounts = Object.fromEntries(people.map(p => [p.id, visibleAssignments.filter(a => a.participantId === p.id).length]));
   const loads = Object.values(loadCounts);
   const loadSpread = loads.length ? Math.max(...loads) - Math.min(...loads) : 0;
   const coverage = totalPositions ? Math.round(filledPositions / totalPositions * 100) : 0;
@@ -626,7 +635,7 @@ async function renderPublished(token, remote = null) {
   const cycle=remote?.cycle || store.state.cycles.find(c=>c.publicToken===token);if(!cycle)return renderPublicError("This roster link is invalid or unavailable.");
   const c=remote?.church || store.state.churches.find(x=>x.id===cycle.churchId);
   if (remote) {
-    store.state.assignments = remote.assignments || [];
+    store.state.assignments = (remote.assignments || []).map(normalizeAssignment);
     store.state.participants = remote.participants || [];
   }
   app.innerHTML=`<div class="public-shell"><header class="public-nav"><div class="public-brand"><span class="brand-mark">${icon("church")}</span><span class="brand-word">SteepleFlow</span></div><span style="color:var(--muted);font-size:11px">${esc(c.name)}</span></header><main class="public-content"><div class="public-head"><span class="eyebrow">Published roster</span><h1>${esc(cycle.name)}</h1></div><section class="public-card">${cycle.dates.map(date=>`<div class="published-date"><div class="published-date-head"><strong>${fullDate(date)}</strong></div><div class="published-roles">${cycle.roles.map(role=>{const a=store.state.assignments.find(x=>x.date===date&&x.role===role),blocked=isBlockedAssignment(a),p=a&&!blocked&&store.state.participants.find(x=>x.id===a.participantId);return `<div class="published-role ${blocked?"blocked":""}"><small>${esc(role)}</small><strong>${blocked?"Not required":esc(p?.name||"Unassigned")}</strong></div>`}).join("")}</div></div>`).join("")}</section></main></div>`;refreshIcons();
