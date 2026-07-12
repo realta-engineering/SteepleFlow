@@ -12,6 +12,7 @@ const emptyState = {
   cycles: [],
   participants: [],
   assignments: [],
+  optimizeRoleLocks: {},
 };
 
 const store = {
@@ -51,6 +52,7 @@ function currentCycle() { const churchId = store.state.session?.role === "admin"
 function church() { return store.state.churches.find(c => c.id === store.state.session?.churchId) || null; }
 function participants() { const cycle = currentCycle(); return cycle ? store.state.participants.filter(p => p.churchId === cycle.churchId && (!p.cycleId || p.cycleId === cycle.id)) : []; }
 function assignmentsFor(cycle) { return cycle ? store.state.assignments.filter(a => !a.cycleId || a.cycleId === cycle.id) : []; }
+function optimizeRoleLocksFor(cycle) { return new Set((store.state.optimizeRoleLocks && store.state.optimizeRoleLocks[cycle?.id]) || []); }
 function isBlockedAssignment(assignment) { return assignment?.participantId === BLOCKED_PARTICIPANT_ID; }
 function blockedPositionCount(cycle, assignments) { return new Set(assignments.filter(a => isBlockedAssignment(a) && cycle.dates.includes(a.date) && cycle.roles.includes(a.role)).map(a => `${a.date}:${a.role}`)).size; }
 function totalPositionCount(cycle, assignments) { return Math.max(cycle.dates.length * cycle.roles.length - blockedPositionCount(cycle, assignments), 0); }
@@ -307,6 +309,7 @@ function renderRoster() {
   }
   const assignments = assignmentsFor(cycle);
   const people = participants();
+  const frozenRoles = optimizeRoleLocksFor(cycle);
   const blockedPositions = blockedPositionCount(cycle, assignments);
   const totalPositions = totalPositionCount(cycle, assignments);
   const filledPositions = filledPositionCount(cycle, assignments);
@@ -327,6 +330,7 @@ function renderRoster() {
         <aside class="panel optimizer-panel"><div class="panel-head"><div><h3>Roster health</h3><p>Balance and availability</p></div></div><div class="panel-body">
           <div class="score-ring" style="--score:${coverage}%"><div class="score-inner"><span><strong>${coverage}</strong><small>Coverage</small></span></div></div>
           <div><div class="metric"><span>Positions filled</span><strong>${filledPositions} / ${totalPositions}</strong></div><div class="metric"><span>Availability conflicts</span><strong class="${conflicts ? "warn" : "good"}">${conflicts}</strong></div><div class="metric"><span>Load spread</span><strong>${loadSpread}</strong></div><div class="metric"><span>Locked placements</span><strong>${assignments.filter(a=>a.locked&&!isBlockedAssignment(a)).length}</strong></div><div class="metric"><span>Blocked roles</span><strong>${blockedPositions}</strong></div></div>
+          <div class="optimize-role-controls"><div class="optimize-role-head"><strong>Optimize roles</strong><span><button type="button" data-freeze-all-roles>Freeze all</button><button type="button" data-unfreeze-all-roles>Unfreeze all</button></span></div><p>Frozen roles keep their current assignments and are skipped by Optimize.</p><div class="role-freeze-list">${cycle.roles.map(role=>`<button type="button" class="role-freeze ${frozenRoles.has(role)?"frozen":""}" data-toggle-role-freeze="${esc(role)}">${icon(frozenRoles.has(role)?"lock":"lock-open")} <span>${esc(role)}</span></button>`).join("")}</div></div>
           <div><button class="btn btn-primary" style="width:100%" data-optimize>${icon("wand-sparkles")} Optimize</button></div>
         </div></aside>
       </div>
@@ -377,11 +381,13 @@ function showAssignmentPicker(date, role) {
 function optimizeRoster(showToast = true) {
   const cycle = currentCycle();
   const people = participants();
+  const frozenRoles = optimizeRoleLocksFor(cycle);
   const manualOnlyIds = new Set(people.filter(p => p.autoAssign === false).map(p => p.id));
-  const preserved = assignmentsFor(cycle).filter(a => a.locked || manualOnlyIds.has(a.participantId));
+  const preserved = assignmentsFor(cycle).filter(a => a.locked || frozenRoles.has(a.role) || manualOnlyIds.has(a.participantId));
   const result = [...preserved];
   const loads = Object.fromEntries(people.map(p => [p.id, preserved.filter(a=>a.participantId===p.id).length]));
   cycle.dates.forEach(date => cycle.roles.forEach(role => {
+    if (frozenRoles.has(role)) return;
     if (result.some(a=>a.date===date&&a.role===role)) return;
     const candidates = people.filter(p => p.submitted && p.autoAssign !== false && p.roles.includes(role) && !p.unavailable.includes(date) && !result.some(a=>a.date===date&&a.participantId===p.id)).sort((a,b)=>(loads[a.id]||0)-(loads[b.id]||0));
     const chosen = candidates[0];
@@ -392,6 +398,10 @@ function optimizeRoster(showToast = true) {
 }
 
 function bindRoster() {
+  const setFrozenRoles=roles=>{const cycle=currentCycle();if(!store.state.optimizeRoleLocks)store.state.optimizeRoleLocks={};if(roles.length)store.state.optimizeRoleLocks[cycle.id]=roles;else delete store.state.optimizeRoleLocks[cycle.id];store.save();renderRoster()};
+  document.querySelectorAll("[data-toggle-role-freeze]").forEach(btn=>btn.addEventListener("click",()=>{const frozen=optimizeRoleLocksFor(currentCycle()),role=btn.dataset.toggleRoleFreeze;if(frozen.has(role))frozen.delete(role);else frozen.add(role);setFrozenRoles([...frozen])}));
+  document.querySelector("[data-freeze-all-roles]").addEventListener("click",()=>setFrozenRoles([...currentCycle().roles]));
+  document.querySelector("[data-unfreeze-all-roles]").addEventListener("click",()=>setFrozenRoles([]));
   document.querySelector("[data-optimize]").addEventListener("click", () => optimizeRoster(true));
   document.querySelector("[data-save]").addEventListener("click", async () => { await api.call("saveAssignments", { cycleId: currentCycle().id, assignments: store.state.assignments.filter(a => !a.cycleId || a.cycleId === currentCycle().id) }); toast("Draft roster saved", "save"); });
   document.querySelector("[data-publish]").addEventListener("click", publishRoster);
@@ -478,6 +488,7 @@ function showDeleteCycleModal(cycle) {
     store.state.cycles = store.state.cycles.filter(c => c.id !== cycle.id);
     store.state.participants = store.state.participants.filter(p => p.cycleId !== cycle.id);
     store.state.assignments = store.state.assignments.filter(a => a.cycleId !== cycle.id);
+    if (store.state.optimizeRoleLocks) delete store.state.optimizeRoleLocks[cycle.id];
     if (store.state.activeCycleId === cycle.id) store.state.activeCycleId = null;
     store.save();
     closeModal();

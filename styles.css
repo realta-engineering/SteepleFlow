@@ -190,6 +190,16 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .metric { display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid var(--line); font-size: 11px; }
 .metric strong.good { color: var(--primary); }
 .metric strong.warn { color: var(--amber); }
+.optimize-role-controls { padding-top: 10px; border-top: 1px solid var(--line); }
+.optimize-role-controls p { margin: 5px 0 8px; color: var(--muted); font-size: 9px; }
+.optimize-role-head { display: flex; align-items: center; justify-content: space-between; gap: 7px; font-size: 10px; }
+.optimize-role-head > span { display: flex; gap: 3px; }
+.optimize-role-head button { padding: 2px 4px; color: var(--primary); border: 0; background: transparent; font-size: 8px; font-weight: 700; }
+.role-freeze-list { display: grid; gap: 4px; }
+.role-freeze { min-height: 28px; display: flex; align-items: center; gap: 6px; padding: 5px 7px; overflow: hidden; color: var(--primary); border: 1px solid var(--line); border-radius: 5px; background: white; font-size: 9px; font-weight: 600; text-align: left; }
+.role-freeze span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.role-freeze .lucide { width: 12px; flex: 0 0 12px; }
+.role-freeze.frozen { color: var(--amber); border-color: #ead3aa; background: var(--amber-soft); }
 .segmented { display: grid; grid-template-columns: repeat(2,1fr); padding: 3px; border-radius: 6px; background: var(--surface-alt); }
 .segmented button { padding: 6px; border: 0; border-radius: 4px; color: var(--muted); background: transparent; font-size: 10px; font-weight: 600; }
 .segmented button.active { color: var(--ink); background: white; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
@@ -333,6 +343,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
   .block-slot { width: 28px; height: 28px; flex-basis: 28px; }
   .participant-auto-toggle { width: 32px; height: 32px; }
   .roster-participant { grid-template-columns: 34px minmax(0,1fr) 34px; min-height: 58px; }
+  .role-freeze { min-height: 36px; font-size: 10px; }
+  .optimize-role-head button { min-height: 32px; padding: 5px 7px; font-size: 9px; }
   .published-roles { grid-template-columns: repeat(2,1fr); }
 }
 
