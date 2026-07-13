@@ -4,6 +4,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycbxWPQXunidRwM6zB7EJi3-S
 const app = document.querySelector("#app");
 const BLOCKED_PARTICIPANT_ID = "__blocked__";
 let geneticOptimizerWorker = null;
+let rosterRepairInFlight = false;
 
 const STORAGE_KEY = "steepleflow_state_v2";
 const emptyState = {
@@ -50,6 +51,13 @@ function normalizeCycle(cycle) {
 
 function normalizeAssignment(assignment) {
   return Object.assign({}, assignment, { date: normalizeDateValue(assignment?.date) });
+}
+
+function applyBootstrapData(data) {
+  store.state.churches = data?.churches || [];
+  store.state.cycles = (data?.cycles || []).map(normalizeCycle);
+  store.state.participants = data?.participants || [];
+  store.state.assignments = (data?.assignments || []).map(normalizeAssignment);
 }
 
 const api = {
@@ -134,12 +142,7 @@ function renderLogin() {
     try {
       const result = await api.call("login", { email, password });
       if (!result.session) throw new Error("The server did not return a session.");
-      if (result.data) {
-        store.state.churches = result.data.churches || [];
-        store.state.cycles = (result.data.cycles || []).map(normalizeCycle);
-        store.state.participants = result.data.participants || [];
-        store.state.assignments = (result.data.assignments || []).map(normalizeAssignment);
-      }
+      if (result.data) applyBootstrapData(result.data);
       store.state.activeCycleId = null;
       store.state.session = result.session;
       store.save();
@@ -330,6 +333,13 @@ function renderRoster() {
   if (!cycle) {
     document.querySelector("#view").innerHTML = `<div class="page-head"><div><h2>Build roster</h2></div></div><section class="panel">${emptyView("calendar-plus", "No active cycle", "Create a roster cycle before building assignments.", `<button class="btn btn-primary" data-route="cycles">${icon("plus")} Create cycle</button>`)}</section>`;
     bindRoutes(document.querySelector("#view")); refreshIcons(); return;
+  }
+  const hasPublicOnlyParticipants=store.state.participants.some(p=>p?.id&&(!p.cycleId||!Array.isArray(p.roles)||!Array.isArray(p.unavailable)));
+  if(hasPublicOnlyParticipants&&!rosterRepairInFlight){
+    rosterRepairInFlight=true;
+    document.querySelector("#view").innerHTML=`<section class="panel confirmation"><span class="confirmation-icon">${icon("loader-circle")}</span><h2>Restoring roster</h2><p>Reloading the full participant and assignment data…</p></section>`;refreshIcons();
+    api.call("getBootstrap").then(result=>{const activeCycleId=cycle.id;applyBootstrapData(result.data);store.state.activeCycleId=activeCycleId;store.save();rosterRepairInFlight=false;renderRoster()}).catch(error=>{rosterRepairInFlight=false;document.querySelector("#view").innerHTML=`<section class="panel">${emptyView("circle-alert","Roster could not be restored",error.message,`<button class="btn btn-primary" data-route="logout">Sign in again</button>`)}</section>`;bindRoutes(document.querySelector("#view"));refreshIcons()});
+    return;
   }
   const assignments = assignmentsFor(cycle);
   const people = participants();
