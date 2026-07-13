@@ -1,8 +1,9 @@
 /* Set this to the deployed Google Apps Script Web App URL for production. */
-const API_URL = "https://script.google.com/macros/s/AKfycbxWPQXunidRwM6zB7EJi3-SE03IZLoTLnIbO5tAEBSvG6g2CAZcj4DkSol5ecmUDN0N/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbyTWdXA8G8V_adSWAbOmvVZktiJ_ALI5V6d-cWQJVQ5Zjalcm5ODkFNEuXH96XzQvoK/exec";
 
 const app = document.querySelector("#app");
 const BLOCKED_PARTICIPANT_ID = "__blocked__";
+const APP_TIME_ZONE = "Asia/Kuala_Lumpur";
 let geneticOptimizerWorker = null;
 let rosterRepairInFlight = false;
 
@@ -38,7 +39,16 @@ function loadState() {
 
 function normalizeDateValue(value) {
   const date = String(value || "");
-  return /^\d{4}-\d{2}-\d{2}/.test(date) ? date.slice(0, 10) : date;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(date)) {
+    const parsed = new Date(date);
+    if (!Number.isNaN(parsed.getTime())) {
+      const parts = new Intl.DateTimeFormat("en-CA", { timeZone: APP_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(parsed);
+      const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+      return `${values.year}-${values.month}-${values.day}`;
+    }
+  }
+  return date;
 }
 
 function normalizeCycle(cycle) {

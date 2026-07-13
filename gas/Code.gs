@@ -1,4 +1,5 @@
-﻿const APP = {
+﻿var SPREADSHEET_TIME_ZONE_CACHE_ = "";
+const APP = {
   SESSION_HOURS: 12,
   SHEETS: {
     Admins: ["id", "role", "churchId", "name", "email", "passwordHash", "active", "createdAt"],
@@ -271,9 +272,21 @@ function rows_(name) { const sheet=sheet_(name),last=sheet.getLastRow();if(last<
 function append_(name, row) { const headers=APP.SHEETS[name];sheet_(name).appendRow(headers.map(h=>row[h]===undefined?"":row[h])); }
 function deleteWhere_(name, predicate) { const sheet=sheet_(name),data=rows_(name);for(let i=data.length-1;i>=0;i--)if(predicate(data[i]))sheet.deleteRow(i+2); }
 function updateWhere_(name, predicate, updater) { const sheet=sheet_(name),headers=APP.SHEETS[name],data=rows_(name);data.forEach((row,i)=>{if(predicate(row)){const next=updater(Object.assign({},row))||row;sheet.getRange(i+2,1,1,headers.length).setValues([headers.map(h=>next[h]===undefined?"":next[h])]);}}); }
-function decodeCycle_(row) { const copy=Object.assign({},row);copy.roles=parseArray_(copy.roles);copy.dates=parseArray_(copy.dates);return copy; }
+function decodeCycle_(row) { const copy=Object.assign({},row);copy.start=dateOnly_(copy.start);copy.end=dateOnly_(copy.end);copy.roles=parseArray_(copy.roles);copy.dates=parseArray_(copy.dates).map(dateOnly_);return copy; }
 function decodeParticipant_(row) { const copy=Object.assign({},row);copy.roles=parseArray_(copy.roles);copy.unavailable=parseArray_(copy.unavailable);copy.autoAssign=copy.autoAssign===""||copy.autoAssign===undefined?true:truthy_(copy.autoAssign);copy.submitted=true;return copy; }
-function decodeAssignment_(row) { const copy=Object.assign({},row);copy.locked=truthy_(copy.locked);return copy; }
+function decodeAssignment_(row) { const copy=Object.assign({},row);copy.date=dateOnly_(copy.date);copy.locked=truthy_(copy.locked);return copy; }
+function dateOnly_(value) {
+  if (value instanceof Date) return Utilities.formatDate(value, spreadsheetTimeZone_(), "yyyy-MM-dd");
+  const text=String(value||"");
+  return /^\d{4}-\d{2}-\d{2}/.test(text)?text.slice(0,10):text;
+}
+function spreadsheetTimeZone_() {
+  if (SPREADSHEET_TIME_ZONE_CACHE_) return SPREADSHEET_TIME_ZONE_CACHE_;
+  const id=PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID");
+  const ss=id?SpreadsheetApp.openById(id):SpreadsheetApp.getActive();
+  SPREADSHEET_TIME_ZONE_CACHE_=ss.getSpreadsheetTimeZone()||Session.getScriptTimeZone();
+  return SPREADSHEET_TIME_ZONE_CACHE_;
+}
 function parseArray_(value) { if(Array.isArray(value))return value;try{return JSON.parse(value||"[]");}catch(e){return [];} }
 function publicChurch_(church) { return { id: church.id, name: church.name, city: church.city }; }
 function withLock_(lock, callback) { lock.waitLock(10000);try{return callback();}finally{lock.releaseLock();} }
