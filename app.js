@@ -289,11 +289,13 @@ function renderParticipants() {
   }
   const people = participants();
   const submitted = people.filter(p=>p.submitted).length;
+  const workspaceCycles=store.state.cycles.filter(c=>c.churchId===cycle.churchId);
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><h2>Participant availability</h2><p>${esc(cycle.name)} &middot; ${submitted} ${submitted === 1 ? "response" : "responses"}</p></div><div class="page-actions"><button class="btn btn-secondary" data-copy-link>${icon("link")} Copy submission link</button><button class="btn btn-primary" data-add-participant>${icon("user-plus")} Add participant</button></div></div>
+    <div class="page-head participant-page-head"><div><h2>Participant availability</h2><p>${esc(cycle.name)} &middot; ${submitted} ${submitted === 1 ? "response" : "responses"}</p></div><div class="page-actions participant-page-actions"><label class="participant-cycle-select"><span>Roster cycle</span><select data-participant-cycle>${workspaceCycles.map(c=>`<option value="${esc(c.id)}" ${c.id===cycle.id?"selected":""}>${esc(c.name)} · ${esc(c.status)}</option>`).join("")}</select></label><button class="btn btn-secondary" data-copy-link ${cycle.status==="open"?"":"disabled"}>${icon("link")} Copy submission link</button><button class="btn btn-primary" data-add-participant>${icon("user-plus")} Add participant</button></div></div>
     ${people.length ? `<div class="toolbar"><div class="search">${icon("search")}<input id="people-search" placeholder="Search participants"></div><div class="role-tags"><span class="tag primary">${submitted} submitted</span></div></div>` : ""}
     <section class="panel">${people.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Participant</th><th>Willing to serve</th><th>Unavailable</th><th>Availability</th><th>Status</th></tr></thead><tbody id="people-body">${people.map(p=>personRow(p,cycle)).join("")}</tbody></table></div>` : emptyView("users", "No responses yet", "Share the submission link with participants to collect availability.")}</section>`;
   const target = document.querySelector("#view");
+  target.querySelector("[data-participant-cycle]").addEventListener("change",e=>{store.state.activeCycleId=e.target.value;store.save();renderParticipants()});
   target.querySelector("#people-search")?.addEventListener("input", e => { const q=e.target.value.toLowerCase(); target.querySelector("#people-body").innerHTML=people.filter(p=>p.name.toLowerCase().includes(q)).map(p=>personRow(p,cycle)).join(""); refreshIcons(); });
   target.querySelector("[data-copy-link]").addEventListener("click", () => copyLink(`join/${cycle.token}`));
   target.querySelector("[data-add-participant]").addEventListener("click", () => showParticipantModal(cycle));
@@ -368,7 +370,7 @@ function renderRoster() {
   const loadSpread = loads.length ? Math.max(...loads) - Math.min(...loads) : 0;
   const coverage = totalPositions ? Math.round(filledPositions / totalPositions * 100) : 0;
   document.querySelector("#view").innerHTML = `
-    <div class="page-head"><div><h2>${esc(cycle.name)}</h2><p>Assign participants, lock key placements, and optimize the remaining roster.</p></div><div class="page-actions roster-page-actions"><button class="btn btn-secondary" data-clear-roster>${icon("eraser")} Clear roster</button><button class="btn btn-primary" data-publish>${icon("send")} ${cycle.status==="published"?"Update published roster":"Publish roster"}</button></div></div>
+    <div class="page-head"><div><h2>${esc(cycle.name)}</h2><p>Assign participants, lock key placements, and optimize the remaining roster.</p></div><div class="page-actions roster-page-actions"><button class="btn btn-secondary" data-clear-roster>${icon("eraser")} Clear roster</button><button class="btn btn-primary" data-publish>${icon("send")} ${cycle.status==="published"?"Update published roster":"Publish roster"}</button><div class="publish-progress" data-publish-progress hidden><span></span><small>Saving assignments to the published roster…</small></div></div></div>
     <div class="steps"><div class="step complete">1. Cycle setup</div><div class="step complete">2. Availability</div><div class="step active">3. Assign roles</div><div class="step">4. Publish</div></div>
     <div class="roster-layout">
       <div class="roster-sidebar">
@@ -559,10 +561,14 @@ function bindRoster() {
 
 async function publishRoster() {
   const cycle=currentCycle(),wasPublished=cycle.status==="published";
+  const publishButton=document.querySelector("[data-publish]"),clearButton=document.querySelector("[data-clear-roster]"),progress=document.querySelector("[data-publish-progress]");
+  publishButton.disabled=true;if(clearButton)clearButton.disabled=true;progress.hidden=false;
+  publishButton.innerHTML=`${icon("loader-circle","spin")} ${wasPublished?"Updating…":"Publishing…"}`;refreshIcons();
   let result;
   try { result=await api.call("publishRoster", { cycleId: cycle.id, assignments: store.state.assignments.filter(a => !a.cycleId || a.cycleId === cycle.id) }); }
-  catch(error){toast(error.message,"circle-alert");return}
+  catch(error){publishButton.disabled=false;if(clearButton)clearButton.disabled=false;progress.hidden=true;publishButton.innerHTML=`${icon("send")} ${wasPublished?"Update published roster":"Publish roster"}`;refreshIcons();toast(error.message,"circle-alert");return}
   cycle.status="published";cycle.publicToken=result.publicToken||cycle.publicToken;store.save();
+  renderRoster();
   showModal(`<div class="confirmation"><span class="confirmation-icon">${icon("check")}</span><h2>${wasPublished?"Published roster updated":"Roster published"}</h2><p>${wasPublished?"The same public link now shows the updated schedule.":"Your participants can now view the finalized schedule."}</p><div class="page-actions" style="justify-content:center"><button class="btn btn-secondary" data-copy-public>${icon("link")} Copy public link</button><a class="btn btn-primary" href="#published/${cycle.publicToken}">${icon("eye")} View roster</a></div></div>`, false);
   document.querySelector("[data-copy-public]").addEventListener("click",()=>copyLink(`published/${cycle.publicToken}`)); refreshIcons();
 }
