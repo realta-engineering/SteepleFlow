@@ -173,6 +173,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
 .person { display: flex; align-items: center; gap: 9px; }
 .person .avatar { width: 30px; height: 30px; }
 .person small { display: block; color: var(--muted); }
+.admin-account-list { display: grid; gap: 8px; }
+.admin-account { display: grid; grid-template-columns: 35px minmax(0,1fr) auto auto; align-items: center; gap: 10px; padding: 11px; border: 1px solid var(--line); border-radius: 7px; }
+.admin-account strong, .admin-account small { display: block; }
+.admin-account small { color: var(--muted); font-size: 10px; }
 .role-tags { display: flex; gap: 5px; flex-wrap: wrap; }
 .tag { padding: 3px 7px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface-alt); font-size: 10px; white-space: nowrap; }
 .tag.primary { color: var(--primary-dark); background: var(--primary-soft); border-color: #c9e7dc; }
@@ -398,6 +402,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--primary); box-sh
   .participant-page-head { align-items: stretch; }
   .participant-page-actions, .participant-cycle-select { width: 100%; }
   .participant-page-actions .btn { flex: 1; }
+  .admin-account { grid-template-columns: 35px minmax(0,1fr) auto; }
+  .admin-account .btn { grid-column: 2 / -1; }
   .search { width: 100%; }
   .steps { overflow-x: auto; }
   .step { min-width: 110px; }

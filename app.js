@@ -1,5 +1,5 @@
 /* Set this to the deployed Google Apps Script Web App URL for production. */
-const API_URL = "https://script.google.com/macros/s/AKfycbyTWdXA8G8V_adSWAbOmvVZktiJ_ALI5V6d-cWQJVQ5Zjalcm5ODkFNEuXH96XzQvoK/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbwCl7oYhHgoGBbsUdEQm6miHvjL-jIYXe0LAHcf2pS-kgB_Gm2b2KdmROUM_G-jq3hf/exec";
 
 const app = document.querySelector("#app");
 const BLOCKED_PARTICIPANT_ID = "__blocked__";
@@ -13,6 +13,8 @@ const emptyState = {
   session: null,
   activeCycleId: null,
   churches: [],
+  admins: [],
+  adminsLoaded: false,
   cycles: [],
   participants: [],
   assignments: [],
@@ -66,6 +68,8 @@ function normalizeAssignment(assignment) {
 
 function applyBootstrapData(data) {
   store.state.churches = data?.churches || [];
+  store.state.admins = data?.admins || [];
+  store.state.adminsLoaded = true;
   store.state.cycles = (data?.cycles || []).map(normalizeCycle);
   store.state.participants = data?.participants || [];
   store.state.assignments = (data?.assignments || []).map(normalizeAssignment);
@@ -92,7 +96,7 @@ function showApiActivity(action) {
   apiRequestsInFlight++;
   let indicator=document.querySelector("#api-activity");
   if(!indicator){indicator=document.createElement("div");indicator.id="api-activity";indicator.className="api-activity";indicator.setAttribute("role","status");indicator.setAttribute("aria-live","polite");document.body.appendChild(indicator)}
-  const labels={login:"Signing in",getBootstrap:"Loading workspace",createChurch:"Creating church",updateChurch:"Updating church",createCycle:"Creating roster cycle",deleteCycle:"Deleting roster cycle",addParticipant:"Saving participant",setParticipantAutoAssign:"Updating participant",saveAssignments:"Saving roster",publishRoster:"Publishing roster",getCycleByToken:"Loading roster cycle",getPublishedRoster:"Loading published roster",submitAvailability:"Submitting availability"};
+  const labels={login:"Signing in",getBootstrap:"Loading workspace",createChurch:"Creating church",updateChurch:"Updating church",addChurchAdmin:"Adding administrator",setChurchAdminActive:"Updating administrator",createCycle:"Creating roster cycle",deleteCycle:"Deleting roster cycle",addParticipant:"Saving participant",setParticipantAutoAssign:"Updating participant",saveAssignments:"Saving roster",publishRoster:"Publishing roster",getCycleByToken:"Loading roster cycle",getPublishedRoster:"Loading published roster",submitAvailability:"Submitting availability"};
   indicator.innerHTML=`<span class="api-activity-spinner">${icon("loader-circle")}</span><span>${esc(labels[action]||"Saving changes")}…</span><span class="api-activity-bar"></span>`;
   indicator.hidden=false;refreshIcons();
 }
@@ -593,20 +597,21 @@ async function publishRoster() {
 
 function renderChurches() {
   if (store.state.session.role !== "super") { location.hash="dashboard"; return; }
-  const churches=store.state.churches;
+  if(!store.state.adminsLoaded){document.querySelector("#view").innerHTML=`<section class="panel confirmation"><span class="confirmation-icon">${icon("loader-circle")}</span><h2>Loading administrators</h2><p>Refreshing church account access…</p></section>`;refreshIcons();api.call("getBootstrap").then(result=>{applyBootstrapData(result.data);store.save();renderChurches()}).catch(error=>{document.querySelector("#view").innerHTML=`<section class="panel">${emptyView("circle-alert","Administrators could not be loaded",error.message)}</section>`;refreshIcons()});return}
+  const churches=store.state.churches,admins=store.state.admins||[];
   const activeCycles=store.state.cycles.filter(c=>c.status==="open").length;
   document.querySelector("#view").innerHTML=`
     <div class="page-head"><div><h2>Church workspaces</h2></div><button class="btn btn-primary" data-action="new-church">${icon("plus")} Add church</button></div>
-    ${stats([["Active churches",churches.filter(c=>c.active).length,"building-2",""],["Church admins",churches.length,"shield-check",""],["Participants",uniqueParticipantCount(),"users",""],["Open cycles",activeCycles,"calendar-range",""]])}
-    <section class="panel" style="margin-top:16px">${churches.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Church</th><th>Location</th><th>Administrator</th><th>Participants</th><th>Status</th><th></th></tr></thead><tbody>${churches.map(c=>`<tr><td><div class="person"><span class="avatar">${initials(c.name)}</span><span><strong>${esc(c.name)}</strong><small>ID: ${esc(c.id)}</small></span></div></td><td>${esc(c.city)}</td><td><strong>${esc(c.adminName)}</strong><small style="display:block;color:var(--muted)">${esc(c.adminEmail)}</small></td><td>${uniqueParticipantCount(c.id)}</td><td><span class="status ${c.active?"open":"closed"}">${c.active?"Active":"Suspended"}</span></td><td><button class="icon-btn" data-edit-church="${c.id}" title="Edit church">${icon("pencil")}</button></td></tr>`).join("")}</tbody></table></div>` : emptyView("building-2", "No church workspaces", "Add a church to create its administrator account.")}</section>`;
-  const target=document.querySelector("#view"); target.querySelector("[data-action='new-church']").addEventListener("click",()=>showChurchModal()); target.querySelectorAll("[data-edit-church]").forEach(b=>b.addEventListener("click",()=>showChurchModal(store.state.churches.find(c=>c.id===b.dataset.editChurch)))); refreshIcons();
+    ${stats([["Active churches",churches.filter(c=>c.active).length,"building-2",""],["Active admins",admins.filter(a=>a.active).length,"shield-check",""],["Participants",uniqueParticipantCount(),"users",""],["Open cycles",activeCycles,"calendar-range",""]])}
+    <section class="panel" style="margin-top:16px">${churches.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Church</th><th>Location</th><th>Administrators</th><th>Participants</th><th>Status</th><th></th></tr></thead><tbody>${churches.map(c=>{const churchAdmins=admins.filter(a=>a.churchId===c.id),activeAdmins=churchAdmins.filter(a=>a.active);return `<tr><td><div class="person"><span class="avatar">${initials(c.name)}</span><span><strong>${esc(c.name)}</strong><small>ID: ${esc(c.id)}</small></span></div></td><td>${esc(c.city)}</td><td><strong>${activeAdmins.length} active</strong><small style="display:block;color:var(--muted)">${churchAdmins.length} ${churchAdmins.length===1?"account":"accounts"}</small></td><td>${uniqueParticipantCount(c.id)}</td><td><span class="status ${c.active?"open":"closed"}">${c.active?"Active":"Suspended"}</span></td><td><div class="cycle-actions"><button class="icon-btn" data-manage-admins="${c.id}" title="Manage administrators">${icon("users")}</button><button class="icon-btn" data-edit-church="${c.id}" title="Edit church">${icon("pencil")}</button></div></td></tr>`}).join("")}</tbody></table></div>` : emptyView("building-2", "No church workspaces", "Add a church to create its administrator account.")}</section>`;
+  const target=document.querySelector("#view"); target.querySelector("[data-action='new-church']").addEventListener("click",()=>showChurchModal()); target.querySelectorAll("[data-edit-church]").forEach(b=>b.addEventListener("click",()=>showChurchModal(store.state.churches.find(c=>c.id===b.dataset.editChurch))));target.querySelectorAll("[data-manage-admins]").forEach(b=>b.addEventListener("click",()=>showChurchAdminsModal(store.state.churches.find(c=>c.id===b.dataset.manageAdmins)))); refreshIcons();
 }
 
 function renderSettings() {
   const user=store.state.session;
   const c=user.role === "admin" ? church() : null;
   const fields=c
-    ? `<div class="field-grid"><div class="field"><label>Church name</label><input value="${esc(c.name)}" readonly></div><div class="field"><label>City</label><input value="${esc(c.city)}" readonly></div><div class="field"><label>Administrator</label><input value="${esc(c.adminName)}" readonly></div><div class="field"><label>Email address</label><input type="email" value="${esc(c.adminEmail)}" readonly></div></div>`
+    ? `<div class="field-grid"><div class="field"><label>Church name</label><input value="${esc(c.name)}" readonly></div><div class="field"><label>City</label><input value="${esc(c.city)}" readonly></div><div class="field"><label>Signed in as</label><input value="${esc(user.name)}" readonly></div><div class="field"><label>Email address</label><input type="email" value="${esc(user.email)}" readonly></div></div>`
     : `<div class="field-grid"><div class="field"><label>Name</label><input value="${esc(user.name)}" readonly></div><div class="field"><label>Email address</label><input type="email" value="${esc(user.email)}" readonly></div></div>`;
   document.querySelector("#view").innerHTML=`<div class="page-head"><div><h2>${c ? "Workspace" : "Account"} details</h2></div></div><section class="panel" style="max-width:720px"><div class="panel-head"><h3>General information</h3></div><div class="panel-body">${fields}</div></section>`;
   refreshIcons();
@@ -652,7 +657,7 @@ function bindRoleRemove(){document.querySelectorAll("[data-remove-role]").forEac
 function weeklyDatesBetween(start,end,weekday=0){const out=[];let d=new Date(`${start}T00:00:00`),last=new Date(`${end}T00:00:00`);if(Number.isNaN(d.getTime())||Number.isNaN(last.getTime())||d>last)return out;d.setDate(d.getDate()+(Number(weekday)-d.getDay()+7)%7);while(d<=last){out.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);d.setDate(d.getDate()+7)}return out}
 
 function showChurchModal(existing=null) {
-  showModal(`<div class="modal-head"><h2>${existing?"Edit":"Add"} church workspace</h2><button class="icon-btn" data-close title="Close">${icon("x")}</button></div><form id="church-form"><div class="modal-body"><div class="field-grid"><div class="field"><label>Church name</label><input name="name" value="${esc(existing?.name||"")}" required></div><div class="field"><label>City</label><input name="city" value="${esc(existing?.city||"")}" required></div><div class="field"><label>Admin name</label><input name="adminName" value="${esc(existing?.adminName||"")}" required></div><div class="field"><label>Admin email</label><input name="adminEmail" type="email" value="${esc(existing?.adminEmail||"")}" required></div></div>${existing?`<div class="form-section"><label class="checkbox-row"><input name="active" type="checkbox" ${existing.active?"checked":""}> Workspace is active</label></div>`:`<div class="calendar-note" style="margin-top:16px">A temporary password will be generated for the church administrator.</div>`}</div><div class="modal-foot"><button class="btn btn-secondary" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">${icon("save")} Save church</button></div></form>`);
+  showModal(`<div class="modal-head"><h2>${existing?"Edit":"Add"} church workspace</h2><button class="icon-btn" data-close title="Close">${icon("x")}</button></div><form id="church-form"><div class="modal-body"><div class="field-grid"><div class="field"><label>Church name</label><input name="name" value="${esc(existing?.name||"")}" required></div><div class="field"><label>City</label><input name="city" value="${esc(existing?.city||"")}" required></div>${existing?"":`<div class="field"><label>First admin name</label><input name="adminName" required></div><div class="field"><label>First admin email</label><input name="adminEmail" type="email" required></div>`}</div>${existing?`<div class="form-section"><label class="checkbox-row"><input name="active" type="checkbox" ${existing.active?"checked":""}> Workspace is active</label><p style="margin:10px 0 0;color:var(--muted);font-size:11px">Administrator accounts are managed separately from the church details.</p></div>`:`<div class="calendar-note" style="margin-top:16px">A temporary password will be generated for the first church administrator.</div>`}</div><div class="modal-foot"><button class="btn btn-secondary" type="button" data-close>Cancel</button><button class="btn btn-primary" type="submit">${icon("save")} Save church</button></div></form>`);
   document.querySelector("#church-form").addEventListener("submit", async e => {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(e.target));
@@ -669,7 +674,7 @@ function showChurchModal(existing=null) {
       return;
     }
     if (existing) Object.assign(existing, data);
-    else store.state.churches.push({ id: result.churchId, name: data.name, city: data.city, adminName: data.adminName, adminEmail: data.adminEmail, active: true, members: 0 });
+    else {store.state.churches.push({ id: result.churchId, name: data.name, city: data.city, adminName: data.adminName, adminEmail: data.adminEmail, active: true, members: 0 });if(result.admin)store.state.admins.push(result.admin)}
     store.save();
     closeModal();
     renderChurches();
@@ -679,6 +684,19 @@ function showChurchModal(existing=null) {
     } else toast(existing ? "Church updated" : "Church workspace created", "building-2");
   });
   refreshIcons();
+}
+
+function showChurchAdminsModal(church) {
+  const admins=(store.state.admins||[]).filter(a=>a.churchId===church.id);
+  showModal(`<div class="modal-head"><div><h2>Administrators</h2><p>${esc(church.name)} · ${admins.filter(a=>a.active).length} active</p></div><button class="icon-btn" data-close title="Close">${icon("x")}</button></div><div class="modal-body"><div class="admin-account-list">${admins.length?admins.map(a=>`<div class="admin-account"><span class="avatar">${initials(a.name)}</span><span><strong>${esc(a.name)}</strong><small>${esc(a.email)}</small></span><span class="status ${a.active?"open":"closed"}">${a.active?"Active":"Inactive"}</span><button class="btn btn-sm ${a.active?"btn-danger":"btn-secondary"}" type="button" data-toggle-church-admin="${esc(a.id)}" data-active="${a.active?"true":"false"}">${a.active?"Deactivate":"Activate"}</button></div>`).join(""):`<p class="participant-pool-empty">No administrator accounts found.</p>`}</div><form id="add-church-admin" class="form-section"><h3>Add administrator</h3><div class="field-grid"><div class="field"><label>Name</label><input name="name" required></div><div class="field"><label>Email address</label><input name="email" type="email" required></div></div><button class="btn btn-primary" type="submit" style="margin-top:14px">${icon("user-plus")} Add administrator</button></form></div>`);
+  document.querySelector("#add-church-admin").addEventListener("submit",async e=>{e.preventDefault();const data=Object.fromEntries(new FormData(e.target));let result;try{result=await api.call("addChurchAdmin",{churchId:church.id,...data})}catch(error){toast(error.message,"circle-alert");return}if(result.admin)store.state.admins.push(result.admin);store.save();closeModal();showTemporaryPassword(data.name,result.temporaryPassword,"Administrator added")});
+  document.querySelectorAll("[data-toggle-church-admin]").forEach(button=>button.addEventListener("click",async()=>{const active=button.dataset.active!=="true";let result;button.disabled=true;try{result=await api.call("setChurchAdminActive",{adminId:button.dataset.toggleChurchAdmin,active})}catch(error){button.disabled=false;toast(error.message,"circle-alert");return}const admin=store.state.admins.find(a=>a.id===button.dataset.toggleChurchAdmin);if(admin)admin.active=result.admin?.active??active;store.save();closeModal();showChurchAdminsModal(church);toast(active?"Administrator activated":"Administrator deactivated",active?"user-check":"user-x")}));
+  refreshIcons();
+}
+
+function showTemporaryPassword(name,password,title="Temporary password") {
+  showModal(`<div class="confirmation"><span class="confirmation-icon">${icon("key-round")}</span><h2>${esc(title)}</h2><p>Share this one-time password securely with ${esc(name)}.</p><div class="field" style="max-width:340px;margin:18px auto;text-align:left"><label>Temporary password</label><input id="temp-password" value="${esc(password)}" readonly></div><button class="btn btn-primary" data-copy-password>${icon("copy")} Copy password</button></div>`,false);
+  document.querySelector("[data-copy-password]").addEventListener("click",async()=>{await navigator.clipboard.writeText(password);toast("Temporary password copied","copy")});refreshIcons();
 }
 
 async function renderParticipant(token, remote = null) {

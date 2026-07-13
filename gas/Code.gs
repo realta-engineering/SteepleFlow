@@ -81,6 +81,8 @@ function doPost(e) {
       getBootstrap: () => getBootstrap_(session),
       createChurch: () => withLock_(lock, () => createChurch_(session, request.payload)),
       updateChurch: () => withLock_(lock, () => updateChurch_(session, request.payload)),
+      addChurchAdmin: () => withLock_(lock, () => addChurchAdmin_(session, request.payload)),
+      setChurchAdminActive: () => withLock_(lock, () => setChurchAdminActive_(session, request.payload)),
       createCycle: () => withLock_(lock, () => createCycle_(session, request.payload)),
       deleteCycle: () => withLock_(lock, () => deleteCycle_(session, request.payload)),
       addParticipant: () => withLock_(lock, () => addParticipant_(session, request.payload)),
@@ -121,7 +123,8 @@ function bootstrapData_(session) {
   const cycleIds = cycles.map(c => c.id);
   const participants = rows_("Participants").filter(p => cycleIds.includes(p.cycleId)).map(decodeParticipant_);
   const assignments = rows_("Assignments").filter(a => cycleIds.includes(a.cycleId)).map(decodeAssignment_);
-  return { churches, cycles, participants, assignments };
+  const admins = session.role === "super" ? rows_("Admins").filter(a => a.role === "admin" && churchIds.includes(a.churchId)).map(publicAdmin_) : [];
+  return { churches, cycles, participants, assignments, admins };
 }
 
 function getCycleByToken_(payload) {
@@ -169,8 +172,9 @@ function createChurch_(session, payload) {
   const churchId = id_("church");
   const temporaryPassword = token_(9);
   append_("Churches", { id: churchId, name: clean_(payload.name, 150), city: clean_(payload.city, 100), adminName: clean_(payload.adminName, 120), adminEmail: email, active: true, members: 0, createdAt: new Date().toISOString() });
-  append_("Admins", { id: id_("admin"), role: "admin", churchId, name: clean_(payload.adminName, 120), email, passwordHash: hashPassword_(temporaryPassword), active: true, createdAt: new Date().toISOString() });
-  return { churchId, temporaryPassword };
+  const admin = { id: id_("admin"), role: "admin", churchId, name: clean_(payload.adminName, 120), email, passwordHash: hashPassword_(temporaryPassword), active: true, createdAt: new Date().toISOString() };
+  append_("Admins", admin);
+  return { churchId, admin: publicAdmin_(admin), temporaryPassword };
 }
 
 function updateChurch_(session, payload) {
@@ -181,6 +185,34 @@ function updateChurch_(session, payload) {
     adminName: clean_(payload.adminName || row.adminName, 120), adminEmail: String(payload.adminEmail || row.adminEmail).toLowerCase()
   }));
   return { churchId: payload.id };
+}
+
+function addChurchAdmin_(session, payload) {
+  requireRole_(session, "super");
+  const church = rows_("Churches").find(c => c.id === (payload || {}).churchId);
+  if (!church) throw new Error("Church workspace not found.");
+  if (!payload.name || !payload.email) throw new Error("Administrator name and email are required.");
+  const email = String(payload.email).trim().toLowerCase();
+  if (rows_("Admins").some(a => String(a.email).toLowerCase() === email)) throw new Error("An administrator already uses this email.");
+  const temporaryPassword = token_(9);
+  const admin = { id: id_("admin"), role: "admin", churchId: church.id, name: clean_(payload.name, 120), email, passwordHash: hashPassword_(temporaryPassword), active: true, createdAt: new Date().toISOString() };
+  append_("Admins", admin);
+  return { admin: publicAdmin_(admin), temporaryPassword };
+}
+
+function setChurchAdminActive_(session, payload) {
+  requireRole_(session, "super");
+  const admin = rows_("Admins").find(a => a.id === (payload || {}).adminId && a.role === "admin");
+  if (!admin) throw new Error("Administrator not found.");
+  const active = (payload || {}).active !== false;
+  if (!active) {
+    const activeAdmins = rows_("Admins").filter(a => a.role === "admin" && a.churchId === admin.churchId && truthy_(a.active));
+    if (activeAdmins.length <= 1) throw new Error("A church must have at least one active administrator.");
+  }
+  updateWhere_("Admins", row => row.id === admin.id, row => Object.assign(row, { active }));
+  if (!active) deleteWhere_("Sessions", row => String(row.email).toLowerCase() === String(admin.email).toLowerCase());
+  admin.active = active;
+  return { admin: publicAdmin_(admin) };
 }
 
 function createCycle_(session, payload) {
@@ -289,6 +321,7 @@ function spreadsheetTimeZone_() {
 }
 function parseArray_(value) { if(Array.isArray(value))return value;try{return JSON.parse(value||"[]");}catch(e){return [];} }
 function publicChurch_(church) { return { id: church.id, name: church.name, city: church.city }; }
+function publicAdmin_(admin) { return { id: admin.id, churchId: admin.churchId, name: admin.name, email: admin.email, active: truthy_(admin.active), createdAt: admin.createdAt }; }
 function withLock_(lock, callback) { lock.waitLock(10000);try{return callback();}finally{lock.releaseLock();} }
 function clean_(value, max) { return String(value || "").replace(/[<>]/g, "").trim().slice(0, max); }
 function truthy_(value) { return value === true || String(value).toLowerCase() === "true" || value === 1; }
