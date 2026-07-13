@@ -6,6 +6,7 @@ const BLOCKED_PARTICIPANT_ID = "__blocked__";
 const APP_TIME_ZONE = "Asia/Kuala_Lumpur";
 let geneticOptimizerWorker = null;
 let rosterRepairInFlight = false;
+let apiRequestsInFlight = 0;
 
 const STORAGE_KEY = "steepleflow_state_v2";
 const emptyState = {
@@ -73,16 +74,33 @@ function applyBootstrapData(data) {
 const api = {
   async call(action, payload = {}) {
     if (!API_URL) throw new Error("The API URL is not configured.");
-    const response = await fetch(API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action, payload, token: store.state.session?.token || "" })
-    });
-    const data = await response.json();
-    if (!data.ok) throw new Error(data.error || "Request failed");
-    return data;
+    showApiActivity(action);
+    try {
+      const response = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action, payload, token: store.state.session?.token || "" })
+      });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || "Request failed");
+      return data;
+    } finally { hideApiActivity(); }
   }
 };
+
+function showApiActivity(action) {
+  apiRequestsInFlight++;
+  let indicator=document.querySelector("#api-activity");
+  if(!indicator){indicator=document.createElement("div");indicator.id="api-activity";indicator.className="api-activity";indicator.setAttribute("role","status");indicator.setAttribute("aria-live","polite");document.body.appendChild(indicator)}
+  const labels={login:"Signing in",getBootstrap:"Loading workspace",createChurch:"Creating church",updateChurch:"Updating church",createCycle:"Creating roster cycle",deleteCycle:"Deleting roster cycle",addParticipant:"Saving participant",setParticipantAutoAssign:"Updating participant",saveAssignments:"Saving roster",publishRoster:"Publishing roster",getCycleByToken:"Loading roster cycle",getPublishedRoster:"Loading published roster",submitAvailability:"Submitting availability"};
+  indicator.innerHTML=`<span class="api-activity-spinner">${icon("loader-circle")}</span><span>${esc(labels[action]||"Saving changes")}…</span><span class="api-activity-bar"></span>`;
+  indicator.hidden=false;refreshIcons();
+}
+
+function hideApiActivity() {
+  apiRequestsInFlight=Math.max(apiRequestsInFlight-1,0);
+  if(!apiRequestsInFlight){const indicator=document.querySelector("#api-activity");if(indicator)indicator.hidden=true}
+}
 
 function icon(name, cls = "") { return `<i data-lucide="${name}" class="${cls}"></i>`; }
 function initials(name = "") { return name.split(/\s+/).map(p => p[0]).join("").slice(0, 2).toUpperCase(); }
