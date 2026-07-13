@@ -29,14 +29,27 @@ function loadState() {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
     if (!saved || !Array.isArray(saved.churches)) return structuredClone(emptyState);
     const state = Object.assign(structuredClone(emptyState), saved);
+    state.cycles = (state.cycles || []).map(normalizeCycle);
     state.assignments = (state.assignments || []).map(normalizeAssignment);
     return state;
   } catch { return structuredClone(emptyState); }
 }
 
+function normalizeDateValue(value) {
+  const date = String(value || "");
+  return /^\d{4}-\d{2}-\d{2}/.test(date) ? date.slice(0, 10) : date;
+}
+
+function normalizeCycle(cycle) {
+  return Object.assign({}, cycle, {
+    start: normalizeDateValue(cycle?.start),
+    end: normalizeDateValue(cycle?.end),
+    dates: (cycle?.dates || []).map(normalizeDateValue)
+  });
+}
+
 function normalizeAssignment(assignment) {
-  const date = String(assignment?.date || "");
-  return Object.assign({}, assignment, { date: /^\d{4}-\d{2}-\d{2}/.test(date) ? date.slice(0, 10) : date });
+  return Object.assign({}, assignment, { date: normalizeDateValue(assignment?.date) });
 }
 
 const api = {
@@ -123,7 +136,7 @@ function renderLogin() {
       if (!result.session) throw new Error("The server did not return a session.");
       if (result.data) {
         store.state.churches = result.data.churches || [];
-        store.state.cycles = result.data.cycles || [];
+        store.state.cycles = (result.data.cycles || []).map(normalizeCycle);
         store.state.participants = result.data.participants || [];
         store.state.assignments = (result.data.assignments || []).map(normalizeAssignment);
       }
@@ -630,7 +643,7 @@ async function renderParticipant(token, remote = null) {
     try { return renderParticipant(token, await api.call("getCycleByToken", { token })); }
     catch (error) { return renderPublicError(error.message); }
   }
-  const cycle=remote?.cycle || store.state.cycles.find(c=>c.token===token);
+  const cycle=remote?.cycle?normalizeCycle(remote.cycle):store.state.cycles.find(c=>c.token===token);
   if(!cycle)return renderPublicError("This submission link is invalid or has expired.");
   const c=remote?.church || store.state.churches.find(x=>x.id===cycle.churchId);
   app.innerHTML=`<div class="public-shell"><header class="public-nav"><div class="public-brand"><span class="brand-mark">${icon("church")}</span><span class="brand-word">SteepleFlow</span></div><span style="color:var(--muted);font-size:11px">${esc(c.name)}</span></header><main class="public-content"><div class="public-head"><span class="eyebrow">Availability request</span><h1>${esc(cycle.name)}</h1><p>Submit the roles and dates that work for you.</p></div><section class="public-card"><form id="availability-form"><div class="panel-body" style="padding:22px"><div class="field-grid"><div class="field"><label>Your name</label><input name="name" autocomplete="name" required></div><div class="field"><label>Email address</label><input name="email" type="email" autocomplete="email" required></div></div><div class="form-section"><h3>Roles you are willing to serve</h3><div class="role-options">${cycle.roles.map(r=>`<label class="role-option"><input type="checkbox" name="roles" value="${esc(r)}"><span><strong>${esc(r)}</strong></span></label>`).join("")}</div></div><div class="form-section"><h3>Dates you are unavailable</h3><p style="color:var(--muted);font-size:11px">Select every date that does not work for you.</p><div class="role-options">${cycle.dates.map(d=>`<label class="role-option"><input type="checkbox" name="unavailable" value="${d}"><span><strong>${fullDate(d)}</strong></span></label>`).join("")}</div></div></div><div class="modal-foot"><small style="color:var(--muted)">${icon("shield-check")} Visible to the church roster admin.</small><button class="btn btn-primary" type="submit">Submit availability ${icon("arrow-right")}</button></div></form></section></main></div>`;
@@ -643,13 +656,11 @@ async function renderPublished(token, remote = null) {
     try { return renderPublished(token, await api.call("getPublishedRoster", { token })); }
     catch (error) { return renderPublicError(error.message); }
   }
-  const cycle=remote?.cycle || store.state.cycles.find(c=>c.publicToken===token);if(!cycle)return renderPublicError("This roster link is invalid or unavailable.");
+  const cycle=remote?.cycle?normalizeCycle(remote.cycle):store.state.cycles.find(c=>c.publicToken===token);if(!cycle)return renderPublicError("This roster link is invalid or unavailable.");
   const c=remote?.church || store.state.churches.find(x=>x.id===cycle.churchId);
-  if (remote) {
-    store.state.assignments = (remote.assignments || []).map(normalizeAssignment);
-    store.state.participants = remote.participants || [];
-  }
-  app.innerHTML=`<div class="public-shell"><header class="public-nav"><div class="public-brand"><span class="brand-mark">${icon("church")}</span><span class="brand-word">SteepleFlow</span></div><span style="color:var(--muted);font-size:11px">${esc(c.name)}</span></header><main class="public-content"><div class="public-head"><span class="eyebrow">Published roster</span><h1>${esc(cycle.name)}</h1></div><section class="public-card">${cycle.dates.map(date=>`<div class="published-date"><div class="published-date-head"><strong>${fullDate(date)}</strong></div><div class="published-roles">${cycle.roles.map(role=>{const a=store.state.assignments.find(x=>x.date===date&&x.role===role),blocked=isBlockedAssignment(a),p=a&&!blocked&&store.state.participants.find(x=>x.id===a.participantId);return `<div class="published-role ${blocked?"blocked":""}"><small>${esc(role)}</small><strong>${blocked?"Not required":esc(p?.name||"Unassigned")}</strong></div>`}).join("")}</div></div>`).join("")}</section></main></div>`;refreshIcons();
+  const publishedAssignments=remote?(remote.assignments||[]).map(normalizeAssignment):assignmentsFor(cycle);
+  const publishedParticipants=remote?(remote.participants||[]):store.state.participants;
+  app.innerHTML=`<div class="public-shell"><header class="public-nav"><div class="public-brand"><span class="brand-mark">${icon("church")}</span><span class="brand-word">SteepleFlow</span></div><span style="color:var(--muted);font-size:11px">${esc(c.name)}</span></header><main class="public-content"><div class="public-head"><span class="eyebrow">Published roster</span><h1>${esc(cycle.name)}</h1></div><section class="public-card">${cycle.dates.map(date=>`<div class="published-date"><div class="published-date-head"><strong>${fullDate(date)}</strong></div><div class="published-roles">${cycle.roles.map(role=>{const a=publishedAssignments.find(x=>x.date===date&&x.role===role),blocked=isBlockedAssignment(a),p=a&&!blocked&&publishedParticipants.find(x=>x.id===a.participantId);return `<div class="published-role ${blocked?"blocked":""}"><small>${esc(role)}</small><strong>${blocked?"Not required":esc(p?.name||"Unassigned")}</strong></div>`}).join("")}</div></div>`).join("")}</section></main></div>`;refreshIcons();
 }
 
 function renderPublicLoading(){app.innerHTML=`<div class="public-shell"><main class="public-content"><section class="public-card confirmation"><span class="confirmation-icon">${icon("loader-circle")}</span><h2>Loading schedule</h2><p>Checking this secure link...</p></section></main></div>`;refreshIcons()}
